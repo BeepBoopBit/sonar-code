@@ -1,0 +1,60 @@
+[package]
+name = "sonar-code"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Local navigation briefs for coding agents"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/BeepBoopBit/sonar-code"
+keywords = ["code-search", "navigation", "cli", "mcp"]
+categories = ["command-line-utilities", "development-tools"]
+publish = ["crates-io"]
+exclude = ["/eval/", "/.sonar/", "/target/", "/.github/"]
+
+[lib]
+name = "sonar"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sonar"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+blake3 = "1.8"
+candle-core = { version = "=0.11.0", default-features = false }
+candle-nn = { version = "=0.11.0", default-features = false }
+candle-transformers = { version = "=0.11.0", default-features = false }
+clap = { version = "4.6", features = ["derive"] }
+ignore = "0.4"
+model2vec-rs = { version = "=0.3.0", default-features = false, features = ["onig", "local-only"] }
+rayon = "1.11"
+rmcp = { version = "=3.5.1", default-features = false, features = ["server", "macros", "transport-io"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+rust-stemmers = "1.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+scip = "=0.10.0"
+protobuf = "=3.7.2"
+tempfile = "3"
+tokenizers = { version = "0.21", default-features = false, features = ["onig"] }
+tree-sitter = "0.25.10"
+tree-sitter-rust = "0.24.2"
+tree-sitter-python = "=0.25.0"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+tree-sitter-typescript = "=0.23.2"
+oxc_allocator = "=0.75.0"
+oxc_ast = "=0.75.0"
+oxc_ast_visit = "=0.75.0"
+oxc_parser = "=0.75.0"
+oxc_span = "=0.75.0"
+sha2 = "0.10.9"
+
+[dev-dependencies]
+rmcp = { version = "=3.5.1", default-features = false, features = ["client", "transport-child-process"] }
+safetensors = "0.5"
+
+[profile.release]
+lto = "thin"
+strip = true

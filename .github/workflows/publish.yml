@@ -1,0 +1,103 @@
+name: Publish to crates.io
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  check:
+    name: Check Rust ${{ matrix.rust }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        rust: [stable, "1.88.0"]
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check release tag
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+
+          with open("Cargo.toml", "rb") as manifest:
+              version = tomllib.load(manifest)["package"]["version"]
+          expected = f"v{version}"
+          actual = os.environ["GITHUB_REF_NAME"]
+          if actual != expected:
+              raise SystemExit(f"Tag {actual!r} must match Cargo.toml: {expected}")
+          print(f"Preparing sonar-code {version}")
+          PY
+
+      - name: Install Rust
+        env:
+          RUST_TOOLCHAIN: ${{ matrix.rust }}
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
+          rustup override set "$RUST_TOOLCHAIN"
+          if [ "$RUST_TOOLCHAIN" = stable ]; then
+            rustup component add rustfmt clippy
+          fi
+
+      - name: Check formatting and Clippy
+        if: matrix.rust == 'stable'
+        run: ./dev.sh check
+
+      - name: Run Rust and installer tests
+        if: matrix.rust == 'stable'
+        run: ./dev.sh test
+
+      - name: Check minimum Rust version
+        if: matrix.rust == '1.88.0'
+        run: cargo check --locked --all-targets
+
+      - name: Check Cargo package
+        if: matrix.rust == 'stable'
+        run: |
+          cargo package --list --locked
+          cargo publish --dry-run --locked
+
+  publish:
+    name: Publish sonar-code
+    needs: check
+    if: github.event_name == 'push' && github.ref_type == 'tag' && github.event.deleted == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          if [ -z "$CARGO_REGISTRY_TOKEN" ]; then
+            echo "Add the CARGO_REGISTRY_TOKEN repository secret before publishing." >&2
+            exit 1
+          fi
+          cargo publish --locked
