@@ -7,13 +7,12 @@ Supports **Rust, Python, TypeScript/TSX, and Markdown**. Basic search runs local
 ## Quick start
 
 Requires Rust 1.88+ and native build tools (a C/C++ compiler and linker).
-Until the first crates.io release, install from this checkout:
+Install from crates.io:
 
 ```sh
-cargo install --path . --locked
+cargo install sonar-code --locked
 ```
 
-After publication, users can install with `cargo install sonar-code --locked`.
 The executable is named `sonar`:
 
 ```sh

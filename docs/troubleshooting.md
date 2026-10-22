@@ -10,8 +10,8 @@ If `sonar` is missing from PATH, use the install destination printed by Cargo or
 `./dev.sh install`. The default is `$CARGO_HOME/bin`, or `~/.cargo/bin` when
 `CARGO_HOME` is unset. Add that directory to your shell's PATH.
 
-After the first crates.io release, rerun `cargo install sonar-code --locked` to
-update. For a local checkout, use `./dev.sh reinstall`. The package is named
+Rerun `cargo install sonar-code --locked` to update. For a local checkout, use
+`./dev.sh reinstall`. The package is named
 `sonar-code`, but the installed command is `sonar`.
 
 If the index is missing, select the same database when indexing and querying:
