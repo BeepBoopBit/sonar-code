@@ -34,20 +34,28 @@ Install Rust 1.88.0 with `rustup toolchain install 1.88.0 --profile minimal` if
 needed. While preparing uncommitted changes, add `--allow-dirty` to the two
 packaging commands. Use a committed, clean checkout for the actual release.
 
-Inspect the package list: it must contain `LICENSE`, `Cargo.lock`, and
-`src/languages/typescript/compiler.cjs`, and exclude local indexes, models,
-evaluation data, and build output. The dry run packages and builds the source
+Inspect the package list: it must contain `LICENSE`, `Cargo.lock`,
+`src/languages/typescript/compiler.cjs`, `src/cli_help.rs`, `src/onboarding.rs`,
+and `src/project.rs`, and exclude local indexes, models, evaluation data,
+and build output. The dry run packages and builds the source
 without uploading it.
 
 Test installation from that extracted package into a temporary directory.
-Replace `0.1.0` below with the version being released:
+Replace `0.1.1` below with the version being released:
 
 ```sh
 install_root="$(mktemp -d)"
-cargo install --path target/package/sonar-code-0.1.0 --locked --root "$install_root"
+cargo install --path target/package/sonar-code-0.1.1 --locked --root "$install_root"
 "$install_root/bin/sonar" --version
 "$install_root/bin/sonar" --help
+"$install_root/bin/sonar" init --help
+"$install_root/bin/sonar" setup codex --help
+"$install_root/bin/sonar" setup claude --help
+"$install_root/bin/sonar" mcp --help
 ```
+
+Before publishing onboarding changes, initialize a temporary repository and
+verify `sonar status` and a search using the [agent setup workflow](agents.md).
 
 ## Publish
 

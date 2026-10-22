@@ -37,6 +37,11 @@ repository and database paths keep their usual meaning.
 still works. Installation does not require sudo or modify shell settings. Use
 `reinstall` to pick up code changes, then restart running MCP clients.
 
+Native `sonar init` and `sonar setup codex/claude` work from the installed
+executable without a checkout. They save settings in the target repository's
+`.sonar/project.json` and manage client configuration and project instructions.
+Use the [native workflow](mcp.md#automatic-client-setup) for ordinary onboarding.
+
 ## Checkout MCP helper
 
 With Sonar and Codex CLI installed, this checkout provides a convenience helper:
@@ -67,6 +72,10 @@ Repeat all original preparation options when refreshing; the helper does not
 save a refresh profile. See [optional preparation](usage.md#optional-preparation)
 for dependencies.
 
+Optional models are shared in `~/.sonar/models/`. Pass that directory explicitly,
+for example `--model "$HOME/.sonar/models/potion-code-16M-v2"`, when using the
+setup or refresh helper. Model downloads are independent of the database path.
+
 ## Tests and configuration
 
 Run a Rust subset while retaining the helper checks:
@@ -76,7 +85,7 @@ Run a Rust subset while retaining the helper checks:
 ./dev.sh test --lib
 ```
 
-To run only the development-helper tests:
+To run only the Python helper tests:
 
 ```sh
 python3 -B -m unittest discover -s scripts -p 'test_*.py'
@@ -84,6 +93,8 @@ python3 -B -m unittest discover -s scripts -p 'test_*.py'
 
 These tests use temporary directories and fake external tools to verify install
 failures, argument handling, working directories, and MCP registration behavior.
+Model download tests use fixture assets and a mocked network to check sharing
+across repositories, reuse, repair, and custom paths without fetching models.
 
 | Environment variable | Purpose |
 | --- | --- |
@@ -98,7 +109,8 @@ committed; builds and Cargo tests use `--locked`.
 
 | Path | Contents |
 | --- | --- |
-| `src/main.rs` | CLI commands and arguments. |
+| `src/main.rs`, `src/cli_help.rs` | CLI commands, arguments, and usage examples. |
+| `src/onboarding.rs`, `src/project.rs` | Saved preparation settings, initialization, safe client configuration, and managed instructions. |
 | `src/lib.rs`, `src/` | Index storage, retrieval, ranking, and navigation. |
 | `src/languages/` | Rust, Python, and TypeScript adapters and compiler integration. |
 | `src/mcp.rs`, `src/mcp/` | MCP tool definitions and runtime. |
@@ -109,7 +121,9 @@ committed; builds and Cargo tests use `--locked`.
 The optional `scripts/check_embeddings.py` compares embeddings against Python
 reference implementations. It requires a compatible Rust encoder executable via
 `--binary`; that helper is not included in this checkout. Its Python dependencies
-are listed in the two reference requirements files under `scripts/`.
+are listed in the two reference requirements files under `scripts/`. It defaults
+to the same shared Potion model in `~/.sonar/models/potion-code-16M-v2`; use
+`--model` for a different local model.
 
 Reference environments, models, indexes, build output, and historical evaluation
 data stay outside Git. See [usage](usage.md#optional-preparation) for model downloads.

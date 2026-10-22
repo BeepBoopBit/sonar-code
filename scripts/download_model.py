@@ -16,47 +16,48 @@ SHA256 = {
     "tokenizer.json": "107bbdcbad4bff1d299b7a4c3a2fb17c52890688b7dd0e4c9deab79d3c4f3d45",
     "model.safetensors": "75cf7a6c2171b230ad19b1e7d8e0b1aee86da5a02af8e7cacedd9921d227623c",
 }
+MINILM_REPOSITORY = "sentence-transformers/all-MiniLM-L6-v2"
+MINILM_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+MINILM_SHA256 = {
+    "config.json": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
+    "tokenizer.json": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
+    "model.safetensors": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
+    "sentence_bert_config.json": "fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7",
+    "1_Pooling/config.json": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
+}
 
 
-def main():
+def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--destination", type=Path)
+    parser.add_argument("--destination", type=Path,
+                        help="model directory (default: ~/.sonar/models/<model-name>)")
     parser.add_argument("--model", choices=["potion", "minilm"], default="potion")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
     repository, revision, checksums = REPOSITORY, REVISION, SHA256
     if args.model == "minilm":
-        repository = "sentence-transformers/all-MiniLM-L6-v2"
-        revision = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
-        checksums = {
-            "config.json": "953f9c0d463486b10a6871cc2fd59f223b2c70184f49815e7efbcab5d8908b41",
-            "tokenizer.json": "be50c3628f2bf5bb5e3a7f17b1f74611b2561a3a27eeab05e5aa30f411572037",
-            "model.safetensors": "53aa51172d142c89d9012cce15ae4d6cc0ca6895895114379cacb4fab128d9db",
-            "sentence_bert_config.json": "fc1993fde0a95c24ec6c022539d41cf6e2f7c9721e5415d6fb6897472a9cd4b7",
-            "1_Pooling/config.json": "4be450dde3b0273bb9787637cfbd28fe04a7ba6ab9d36ac48e92b11e350ffc23",
-        }
+        repository, revision, checksums = MINILM_REPOSITORY, MINILM_REVISION, MINILM_SHA256
     if args.destination is None:
-        args.destination = Path(".sonar/models") / ("all-MiniLM-L6-v2" if args.model == "minilm" else "potion-code-16M-v2")
+        args.destination = Path.home() / ".sonar/models" / repository.rsplit("/", 1)[-1]
     args.destination.mkdir(parents=True, exist_ok=True)
     provenance = {"repository": repository, "revision": revision, "files": {}}
     for name in checksums:
         url = f"https://huggingface.co/{repository}/resolve/{revision}/{name}"
         existing = args.destination / name
-        if existing.is_file() and hashlib.sha256(existing.read_bytes()).hexdigest() == checksums[name]:
-            data = existing.read_bytes()
-        else:
+        data = existing.read_bytes() if existing.is_file() else None
+        if data is None or hashlib.sha256(data).hexdigest() != checksums[name]:
             with urllib.request.urlopen(url, timeout=60) as response:
                 data = response.read()
-        digest = hashlib.sha256(data).hexdigest()
-        if digest != checksums[name]:
-            raise SystemExit(f"Checksum mismatch for {name}; existing asset was not replaced.")
-        (args.destination / name).parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(dir=args.destination, delete=False) as temp:
-            temporary = Path(temp.name)
-            temp.write(data)
-        try:
-            os.replace(temporary, args.destination / name)
-        finally:
-            temporary.unlink(missing_ok=True)
+            if hashlib.sha256(data).hexdigest() != checksums[name]:
+                raise SystemExit(f"Checksum mismatch for {name}; existing asset was not replaced.")
+            existing.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(dir=args.destination, delete=False) as temp:
+                temporary = Path(temp.name)
+                temp.write(data)
+            try:
+                os.replace(temporary, existing)
+            finally:
+                temporary.unlink(missing_ok=True)
+        digest = checksums[name]
         provenance["files"][name] = {"sha256": digest, "bytes": len(data)}
     (args.destination / "provenance.json").write_text(json.dumps(provenance, indent=2) + "\n")
     print(json.dumps(provenance, indent=2))

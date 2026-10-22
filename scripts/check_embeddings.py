@@ -6,15 +6,23 @@ import json
 import subprocess
 from pathlib import Path
 
-import numpy as np
-from model2vec import StaticModel
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--model", type=Path,
+                        help="local model directory (default: ~/.sonar/models/potion-code-16M-v2)")
+    parser.add_argument("--binary", type=Path, default=Path("target/release/examples/encode"))
+    args = parser.parse_args(argv)
+    if args.model is None:
+        args.model = Path.home() / ".sonar/models/potion-code-16M-v2"
+    return args
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--model", type=Path, default=Path(".sonar/models/potion-code-16M-v2"))
-    parser.add_argument("--binary", type=Path, default=Path("target/release/examples/encode"))
-    args = parser.parse_args()
+    args = parse_args()
+    import numpy as np
+    from model2vec import StaticModel
+
     texts = [
         "", "Where are process spawn workers configured and started?",
         "fn verify_local_peer(stream: &UnixStream) -> io::Result<()> { Ok(()) }",

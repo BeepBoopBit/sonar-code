@@ -9,12 +9,13 @@ use serde_json::{Value, json};
 use tokio::sync::{mpsc, oneshot};
 
 use super::params;
-use crate::{Investigator, store, workspace};
+use crate::{Investigator, onboarding, store, workspace};
 
 pub(super) const QUEUE_CAPACITY: usize = 8;
 
 pub(super) enum Operation {
     Status,
+    Init,
     Brief(params::Brief),
     Investigate(params::Investigate),
     Locate(params::Locate),
@@ -39,9 +40,14 @@ pub(super) fn tool_error(code: &str, message: impl Into<String>) -> CallToolResu
 }
 
 impl Worker {
-    pub(super) fn start(db: &Path, model: Option<&Path>) -> Result<(Self, thread::JoinHandle<()>)> {
+    pub(super) fn start(
+        db: &Path,
+        model: Option<&Path>,
+        root: Option<&Path>,
+    ) -> Result<(Self, thread::JoinHandle<()>)> {
         let db = db.to_owned();
         let model = model.map(Path::to_owned);
+        let root = root.map(Path::to_owned);
         let (sender, mut receiver) = mpsc::channel::<Job>(QUEUE_CAPACITY);
         let (ready, startup) = std::sync::mpsc::sync_channel(1);
         let thread = thread::Builder::new()
@@ -50,7 +56,7 @@ impl Worker {
                 // All model and SQLite work stays off the protocol executor. A cancelled
                 // caller drops its receiver; queued work is skipped and active work's
                 // result is discarded. The synchronous engine itself is not preempted.
-                let runtime = match Runtime::open(&db, model.as_deref()) {
+                let mut runtime = match Runtime::open(&db, model.as_deref(), root.as_deref()) {
                     Ok(runtime) => {
                         let _ = ready.send(Ok(()));
                         runtime
@@ -99,7 +105,14 @@ impl Worker {
         }
         match received.await {
             Ok(Ok(value)) => CallToolResult::structured(value),
-            Ok(Err(message)) => tool_error("navigation_error", message),
+            Ok(Err(message)) => tool_error(
+                if message.contains("not_initialized:") {
+                    "not_initialized"
+                } else {
+                    "navigation_error"
+                },
+                message,
+            ),
             Err(_) => tool_error(
                 "worker_unavailable",
                 "Navigation worker stopped; restart the Sonar MCP process.",
@@ -111,31 +124,82 @@ impl Worker {
 struct Runtime {
     db: PathBuf,
     root: String,
-    investigator: Investigator,
+    investigator: Option<Investigator>,
+    configuration: onboarding::Configuration,
+    model_error: Option<String>,
 }
 
 impl Runtime {
-    fn open(db: &Path, model: Option<&Path>) -> Result<Self> {
-        let conn = store::open(db, false)?;
-        let root = store::metadata(&conn, "root")?
-            .context("index sources first with `sonar index <repository>`")?;
-        let db = db.canonicalize()?;
+    fn open(db: &Path, model: Option<&Path>, root: Option<&Path>) -> Result<Self> {
+        let mut configuration = onboarding::configuration(root, Some(db))?;
+        if let Some(model) = model {
+            configuration.model = Some(std::path::absolute(model)?);
+        }
+        let existing = onboarding::indexed_root(&configuration.db)?;
+        if let Some(root) = &existing {
+            ensure!(
+                *root == configuration.root,
+                "Configured repository root does not match the index"
+            );
+        }
         Ok(Self {
-            investigator: Investigator::open(&db, model)?,
-            db,
-            root,
+            db: configuration.db.clone(),
+            root: configuration.root.to_string_lossy().into_owned(),
+            investigator: None,
+            model_error: None,
+            configuration,
         })
     }
 
-    fn execute(&self, operation: Operation) -> Result<Value> {
+    fn execute(&mut self, operation: Operation) -> Result<Value> {
+        if matches!(operation, Operation::Init) {
+            let report = onboarding::initialize(&self.configuration)?;
+            self.investigator = Some(Investigator::open(
+                &self.db,
+                self.configuration.model.as_deref(),
+            )?);
+            self.model_error = None;
+            return Ok(report);
+        }
+        let indexed_root = onboarding::indexed_root(&self.db)?;
+        if indexed_root.is_none() {
+            if matches!(operation, Operation::Status) {
+                return Ok(onboarding::uninitialized(Path::new(&self.root), &self.db));
+            }
+            anyhow::bail!("not_initialized: call sonar_init or run sonar init for this repository");
+        }
+        ensure!(
+            indexed_root.as_deref() == Some(Path::new(&self.root)),
+            "The configured database now belongs to a different repository; restart Sonar with the intended --db"
+        );
+        if self.investigator.is_none() {
+            match Investigator::open(&self.db, self.configuration.model.as_deref()) {
+                Ok(investigator) => {
+                    self.investigator = Some(investigator);
+                    self.model_error = None;
+                }
+                Err(error) if matches!(operation, Operation::Status) => {
+                    self.model_error = Some(format!("{error:#}"));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        if matches!(operation, Operation::Status) {
+            return self.status();
+        }
         let conn = store::open(&self.db, false)?;
         ensure!(
             store::metadata(&conn, "root")?.as_deref() == Some(&self.root),
             "the configured database now belongs to a different repository; restart Sonar with the intended --db"
         );
         drop(conn);
-        let engine = self.investigator.engine();
+        let investigator = self
+            .investigator
+            .as_ref()
+            .expect("initialized investigator");
+        let engine = investigator.engine();
         Ok(match operation {
+            Operation::Init => unreachable!(),
             Operation::Status => self.status()?,
             Operation::Brief(p) => serde_json::to_value(
                 engine
@@ -152,7 +216,7 @@ impl Runtime {
                     )?
                     .0,
             )?,
-            Operation::Investigate(p) => serde_json::to_value(self.investigator.investigate(
+            Operation::Investigate(p) => serde_json::to_value(investigator.investigate(
                 &p.query,
                 &crate::InvestigationOptions {
                     from: p.from,
@@ -232,8 +296,26 @@ impl Runtime {
         let representation = store::metadata(&tx, "embedding_representation")?;
         let vectors: i64 = tx.query_row("SELECT count(*) FROM embeddings", [], |r| r.get(0))?;
         let expected: i64 = tx.query_row("SELECT count(*) FROM regions WHERE (?1='combined' AND view='combined') OR (?1 IN ('separate','context') AND view!='combined')", [representation.as_deref().unwrap_or("")], |r| r.get(0))?;
-        let (retrieval, focus, configured_model) = self.investigator.engine().navigation_setup();
+        let (retrieval, focus, configured_model) = self
+            .investigator
+            .as_ref()
+            .map(|investigator| investigator.engine().navigation_setup())
+            .unwrap_or((
+                if self.configuration.model.is_some() {
+                    crate::RetrievalMode::Hybrid
+                } else {
+                    crate::RetrievalMode::Lexical
+                },
+                crate::FocusOptions {
+                    policy: crate::FocusPolicy::Window,
+                    max_lines: 16,
+                },
+                None,
+            ));
         let mut notices = crate::languages::coverage_notices(&languages);
+        if let Some(error) = &self.model_error {
+            notices.push(crate::Notice::new("configured_model_unavailable", error));
+        }
         if languages
             .iter()
             .any(|l| l.language == "typescript" && l.semantic_freshness == "current")
@@ -268,7 +350,7 @@ impl Runtime {
             notices.push(crate::Notice::new("embeddings_unavailable", "Hybrid discovery needs matching complete embeddings: run `sonar embed --model <configured-model>`. If switching models/encoding, restart this server with the new configuration."));
         }
         Ok(json!({
-            "version": 1, "root": self.root, "database": self.db,
+            "version": 1, "initialized": true, "state": "ready", "root": self.root, "database": self.db,
             "index": {"snapshot": snapshot, "syntax_freshness": if fresh {"current"} else {"stale"},
                 "semantic_profile": profile, "semantic_freshness": crate::languages::aggregate_semantic(&languages, semantic, profile.is_some()), "languages": languages},
             "files": indexed.len(), "changed_or_deleted_files": changed, "added_files": added,
@@ -276,11 +358,19 @@ impl Runtime {
             "parse_error_files": tx.query_row("SELECT count(*) FROM files WHERE parse_errors != 0", [], |r| r.get::<_,i64>(0))?,
             "literal_navigation_current": navigation,
             "retrieval": retrieval, "focus_policy": focus.policy,
-            "configured_model_fingerprint": configured_model,
+            "configured_model_fingerprint": configured_model, "model_error":self.model_error,
             "embeddings": {"model_fingerprint": embedding_model, "representation": representation,
                 "vectors": vectors, "expected_vectors": expected, "current": embeddings_current,
                 "matches_configured_model": configured_model.map(|m| Some(m) == embedding_model.as_deref())},
-            "read_only": true, "queue_capacity": QUEUE_CAPACITY, "notices": notices
+            "read_only": false, "query_tools_read_only": true, "queue_capacity": QUEUE_CAPACITY, "notices": notices
         }))
     }
+}
+
+pub(super) fn project_status(
+    db: &Path,
+    model: Option<&Path>,
+    root: Option<&Path>,
+) -> Result<Value> {
+    Runtime::open(db, model, root)?.execute(Operation::Status)
 }

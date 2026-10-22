@@ -2,7 +2,22 @@
 
 Check `sonar --version` and `sonar --help`. From a Sonar checkout,
 `./dev.sh doctor` also checks development tools. For query problems, inspect the
-JSON `index` and `notices` fields; in an MCP client, call `sonar_status`.
+JSON `index` and `notices` fields, or run `sonar status`; in an MCP client,
+call `sonar_status`.
+
+## Initialization or client setup
+
+Run `sonar init`, or `sonar setup codex` / `sonar setup claude` for a complete
+client connection. MCP clients can call `sonar_init` if status reports
+`initialized: false`. Initialization saves custom database paths and optional
+preparation settings; repeat it after changes to refresh the same plan.
+
+Setup preserves other client entries and instructions. A conflicting connection
+needs `--replace` or a distinct `--name`. Malformed client configuration and
+incomplete managed instruction blocks must be corrected before changes can be
+merged. Reload the client after setup, accept project trust if required, then
+call `sonar_status`. The verification checks the local process, not whether a
+running client session has reloaded its configuration.
 
 ## Command or index not found
 
@@ -17,25 +32,38 @@ Rerun `cargo install sonar-code --locked` to update. For a local checkout, use
 If the index is missing, select the same database when indexing and querying:
 
 ```sh
-sonar --db /absolute/path/to/project.sqlite index /path/to/your/repo
+sonar --db /absolute/path/to/project.sqlite init /path/to/your/repo
 sonar --db /absolute/path/to/project.sqlite brief "request authentication"
 ```
 
-Without `--db`, the path is `.sonar/index.sqlite` relative to your working directory.
-Helper-created MCP indexes normally live under the Sonar checkout's `.sonar/mcp/`.
+Later commands inside the project reuse its saved database path. From elsewhere,
+pass `--db` explicitly. Without saved settings or `--db`, the default is
+`.sonar/index.sqlite` under the current directory. Helper-created MCP indexes live
+under the checkout's `.sonar/mcp/`; those helpers do not save native settings.
 
 ## Stale sources, handles, or a moved repository
 
-Rerun `index` with the original options, then repeat the optional navigation,
-resolution, and embedding steps you use. Obtain new handles afterward. Use a
-location's `handle` value; short IDs such as `s1` cannot be used for navigation.
+Run `sonar init` or call `sonar_init` to repeat saved preparation, then repeat
+separately managed steps such as caller vectors or quantities if used. For manual
+indexes, repeat `index` and preparation with the original flags. Obtain new handles;
+short response IDs such as `s1` cannot be used for navigation.
 
-An index is bound to its repository's absolute path. If you move the repository
-or see `this database belongs to ...`, choose a new `--db` path and rebuild the
-index. Update any MCP connection to use the new path.
+Both the index and `.sonar/project.json` are bound to the repository's absolute
+path. After a move, stop its MCP processes, inspect the saved paths, and move
+`.sonar/project.json` aside to an unused backup path. Then create a new database:
 
-For an older database schema, `sonar index` upgrades supported versions. If it
-still reports `unsupported index database`, create a new index and prepare it again.
+```sh
+sonar --db /new/path/to/repo/.sonar/rebuilt.sqlite init /new/path/to/repo
+```
+
+Repeat saved `--resources`, `--chunking`, `--resolve`, `--typescript`, and `--model`
+options you want to retain. Check status, rerun `sonar setup codex --replace` or
+the Claude equivalent from the new root, and reload the client. Global setup uses
+a root-derived server name; remove the old connection separately. For a different
+repository, always choose a separate database.
+
+Initialization upgrades supported older schemas through indexing. If it still
+reports `unsupported index database`, select a fresh `--db` path and run init again.
 
 ## Empty or incomplete results
 
@@ -66,15 +94,23 @@ TypeScript 5.x/6.x compiler module, and the target project's dependencies; pass 
 compiler path with `--typescript`.
 
 For `index model does not match these assets`, incomplete embeddings, or embeddings
-that do not cover the current generation, rerun `embed --model /path/to/model`
-against the same database after indexing. Use that same model for queries and
-MCP. The [model downloader](../scripts/download_model.py) can fetch missing assets;
+that do not cover the current generation, rerun `sonar init` if its model is
+saved, or `embed --model /path/to/model` against the same database after indexing.
+Use the matching model for queries and MCP. The [model downloader](../scripts/download_model.py) can fetch missing assets;
 queries do not download them automatically.
+
+The downloader defaults to `~/.sonar/models/`, shared across repositories.
+If models were previously downloaded into a project's `.sonar/models/`, pass
+that existing path or [copy them to the shared location](usage.md#reuse-existing-model-downloads)
+to avoid downloading them again. Save that path with `sonar init --model PATH`,
+or repeat it on embedding, queries, and MCP for manual setups. Status remains
+available when optional model assets are missing and reports the model error.
 
 ## MCP connection problems
 
-Confirm the configured executable and database exist, using absolute paths. Check
-that the client's execution environment can also read the indexed repository.
+Confirm the configured executable and root are accessible using absolute paths.
+The database can be created through `sonar_init`; query/navigation calls require
+initialization. Check that the client can also read the source tree.
 Inspect its error output, and start a new session after setup or upgrading.
 
 For Codex, `codex mcp get sonar-project` shows the registered command. If

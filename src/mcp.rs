@@ -1,4 +1,4 @@
-//! Read-only MCP transport over the same navigation engine used by the CLI.
+//! Project initialization and code navigation tools over MCP.
 use std::{path::Path, time::Duration};
 
 use anyhow::{Context, Result};
@@ -14,7 +14,7 @@ mod runtime;
 
 use runtime::{Operation, Worker};
 
-const INSTRUCTIONS: &str = "Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust and TypeScript/TSX support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Empty results never establish feature absence. Paths are relative to the root reported by status. Indexing, embedding and resolution are explicit local CLI operations; this server only reads. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
+const INSTRUCTIONS: &str = "Check sonar_status first. If initialized=false, call sonar_init to explicitly prepare this server's bound repository. Search/navigation require initialization. The init tool writes local project state and ignore rules; query tools only read. Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust and TypeScript/TSX support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Empty results never establish feature absence. Paths are relative to the root reported by status. Use sonar_init to refresh saved preparation settings, or use explicit local CLI indexing, embedding, and resolution operations. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
 
 #[derive(Clone)]
 struct SonarServer {
@@ -29,6 +29,19 @@ impl SonarServer {
             worker,
             tool_router: Self::tool_router(),
         }
+    }
+
+    #[tool(
+        description = "Explicitly initialize or refresh this server's bound repository: index source files, prepare basic navigation, save project settings, and add .sonar/ to .gitignore. Reuses saved optional compiler/model preparation. Does not modify AI client registrations.",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn sonar_init(&self, Parameters(_): Parameters<params::Empty>) -> CallToolResult {
+        self.worker.call(Operation::Init).await
     }
 
     #[tool(
@@ -156,9 +169,21 @@ impl ServerHandler for SonarServer {
 
 /// Serve one prepared index over stdio until the client closes the transport.
 /// Standard output is reserved for MCP frames; setup failures return to the CLI's stderr.
-/// The optional model is loaded once. Index refresh remains an explicit CLI operation.
+/// The optional model is reused. Refresh explicitly through sonar_init or the CLI.
 pub fn serve_mcp(db: &Path, model: Option<&Path>) -> Result<()> {
-    let (worker, thread) = Worker::start(db, model)?;
+    serve_mcp_project(db, model, None)
+}
+
+pub fn project_status(
+    db: &Path,
+    model: Option<&Path>,
+    root: Option<&Path>,
+) -> Result<serde_json::Value> {
+    runtime::project_status(db, model, root)
+}
+
+pub fn serve_mcp_project(db: &Path, model: Option<&Path>, root: Option<&Path>) -> Result<()> {
+    let (worker, thread) = Worker::start(db, model, root)?;
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()?;

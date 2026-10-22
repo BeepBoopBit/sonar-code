@@ -63,6 +63,7 @@ impl Client {
             .arg("--db")
             .arg(&f.db)
             .arg("mcp")
+            .current_dir(&f.root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit())
@@ -384,11 +385,14 @@ fn legacy_stdio_exposes_read_only_schemas_and_matches_navigation_api() {
         let mut c = Client::start(&f, false).await;
         let list = c.request(1, "tools/list", json!({})).await;
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 8);
+        assert_eq!(tools.len(), 9);
         for tool in tools {
             assert_eq!(tool["inputSchema"]["type"], "object");
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);
-            assert_eq!(tool["annotations"]["readOnlyHint"], true);
+            assert_eq!(
+                tool["annotations"]["readOnlyHint"],
+                tool["name"] != "sonar_init"
+            );
             assert_eq!(tool["annotations"]["destructiveHint"], false);
             assert_eq!(tool["annotations"]["openWorldHint"], false);
         }
@@ -544,7 +548,7 @@ fn modern_stdio_supports_discovery_pagination_and_recovery_after_invalid_calls()
             );
         }
         let list = c.request(11, "tools/list", json!({})).await;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 8);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
         assert_eq!(
             content(&c.call(12, "sonar_status", json!({})).await)["index"]["syntax_freshness"],
             "current"
@@ -632,7 +636,7 @@ fn protocol_remains_responsive_under_backpressure_and_cancelled_work_has_no_repl
             let id = response["id"].as_u64().unwrap();
             assert_ne!(id, 1, "cancelled request received a reply");
             if id == 99 {
-                assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 8);
+                assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 9);
                 break;
             }
             assert_eq!(
@@ -665,7 +669,7 @@ fn protocol_remains_responsive_under_backpressure_and_cancelled_work_has_no_repl
             "queue accepted more than one active plus eight waiting requests"
         );
         assert_eq!(
-            content(&c.call(100, "sonar_status", json!({})).await)["read_only"],
+            content(&c.call(100, "sonar_status", json!({})).await)["query_tools_read_only"],
             true
         );
         c.close().await;
@@ -732,7 +736,7 @@ fn official_sdk_client_can_discover_and_call_the_stdio_server() {
         command.arg("--db").arg(&f.db).arg("mcp");
         let client = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
         let tools = client.list_tools(None).await.unwrap();
-        assert_eq!(tools.tools.len(), 8);
+        assert_eq!(tools.tools.len(), 9);
         let result = client
             .call_tool(
                 CallToolRequestParams::new("sonar_brief")
@@ -752,19 +756,36 @@ fn official_sdk_client_can_discover_and_call_the_stdio_server() {
 }
 
 #[test]
-fn missing_index_fails_without_polluting_protocol_stdout() {
-    let temp = tempfile::tempdir().unwrap();
-    let result = std::process::Command::new(env!("CARGO_BIN_EXE_sonar"))
-        .arg("--db")
-        .arg(temp.path().join("missing.sqlite"))
-        .arg("mcp")
-        .output()
-        .unwrap();
-    assert!(!result.status.success());
-    assert!(result.stdout.is_empty());
-    assert!(
-        String::from_utf8(result.stderr)
-            .unwrap()
-            .contains("index not found")
-    );
+fn missing_index_can_be_initialized_through_mcp_without_changing_its_bound_root() {
+    run(async {
+        let f = Fixture::new();
+        fs::remove_file(&f.db).unwrap();
+        let mut client = Client::start(&f, false).await;
+        let status = content(&client.call(1, "sonar_status", json!({})).await);
+        assert_eq!(status["initialized"], false);
+        assert!(!f.db.exists());
+        let search = client
+            .call(2, "sonar_brief", json!({"query":"policy"}))
+            .await;
+        assert_eq!(search["result"]["isError"], true);
+        let escaped = client
+            .call(3, "sonar_init", json!({"root":"/elsewhere"}))
+            .await;
+        assert_eq!(escaped["result"]["isError"], true);
+        assert!(!f.db.exists());
+        let initialized = content(&client.call(4, "sonar_init", json!({})).await);
+        assert_eq!(initialized["root"], f.root.to_str().unwrap());
+        assert_eq!(initialized["initialized"], true);
+        assert!(f.root.join(".gitignore").is_file());
+        let status = content(&client.call(5, "sonar_status", json!({})).await);
+        assert_eq!(status["initialized"], true);
+        assert_eq!(status["index"]["syntax_freshness"], "current");
+        let search = content(
+            &client
+                .call(6, "sonar_brief", json!({"query":"policy"}))
+                .await,
+        );
+        assert!(!search["files"].as_array().unwrap().is_empty());
+        client.close().await;
+    });
 }

@@ -7,16 +7,29 @@ from the repository you want to search.
 
 ```sh
 cd /path/to/your/repo
-sonar index .
+sonar init
 sonar investigate "Where are incoming requests authenticated?"
 sonar brief "How are failed requests retried?" --limit 3
 ```
 
-The default index is `.sonar/index.sqlite` in your current directory. It belongs
-to one repository at its absolute path. To keep multiple indexes, pass
-`--db /path/to/project.sqlite` to every command for that project.
+Initialization prepares the index and basic navigation, updates `.gitignore`,
+and saves settings in `.sonar/project.json`. Repeat `sonar init` to refresh saved
+options and preparation, including a custom database path. Commands from the
+project or its subdirectories reuse those settings.
 
-Queries return JSON. Errors go to stderr and return a nonzero exit status.
+The default index is `.sonar/index.sqlite` in your project directory. It belongs
+to one repository at its absolute path. Save a custom path with
+`sonar --db /path/to/project.sqlite init`; later project commands reuse it.
+To select a different index or query from outside the project, pass `--db`
+explicitly. Existing valid indexes work without a settings file; `init` adopts them.
+The lower-level `index ROOT` command remains available for manual workflows.
+
+Commands return JSON. Errors go to stderr and return a nonzero exit status.
+`sonar status` works before initialization, reports `initialized: false` and
+`state: "not_initialized"`, and creates no database. Search and navigation require
+an initialized index. A stale index remains initialized; check freshness separately.
+For AI client registration, use `sonar setup codex` or `sonar setup claude`;
+see [MCP setup](mcp.md).
 
 | Response field | How to use it |
 | --- | --- |
@@ -57,7 +70,7 @@ Response IDs such as `s1` are not handles. Obtain fresh handles after reindexing
 | Python `.py`, `.pyi` | Search and declarations; resolved calls and field uses are unavailable. |
 | TypeScript `.ts`, `.tsx`, `.mts`, `.cts`, including declarations | Search and declarations; compiler relationships after TypeScript resolution. |
 | Markdown `.md` | Searchable document sections. |
-| YAML `.yaml`, `.yml` | Optional plain-text resources with `index . --resources yaml`; maximum 256 KiB per file. |
+| YAML `.yaml`, `.yml` | Optional plain-text resources with `init --resources yaml`; maximum 256 KiB per file. |
 
 Languages are detected together. Indexing honors repository `.gitignore` and
 `.ignore` rules, skips hidden files and dependency/build directories, and does
@@ -65,21 +78,26 @@ not follow symlinks. Parent and global Git ignore rules are not used.
 
 ## Optional preparation
 
-Basic search needs only `index`. For richer navigation, prepare the features you use:
+Basic `init` includes supported document/resource links and module navigation.
+Save additional preparation for later refreshes using these options:
 
 ```sh
-sonar index-navigation
 # Rust calls, references, and field uses:
-sonar resolve
+sonar init --resolve
 # TypeScript calls, references, and field uses:
-sonar resolve --typescript /path/to/node_modules/typescript
+sonar init --typescript /path/to/node_modules/typescript
+# Include YAML text resources and select source chunking:
+sonar init --resources yaml --chunking ast
 ```
 
-`index-navigation` adds supported document/resource links and module navigation.
+Options can be combined for a mixed repository. Saved settings include resources,
+chunking, Rust and TypeScript preparation, and a local embedding model. Explicit
+flags override saved values; later `sonar init` repeats the saved plan.
+For manual workflows, `index-navigation` and `resolve` remain separate commands.
 Rust resolution needs rust-analyzer, the target's Rust toolchain, and locally
 available dependencies; Cargo analysis runs locked and offline. TypeScript
 resolution needs Node.js, a local TypeScript 5.x/6.x compiler, and project
-dependencies. Run both resolution commands for a mixed Rust/TypeScript repository.
+dependencies. Configure both language options for a mixed repository.
 Recorded relationships are static evidence, and coverage can be incomplete.
 
 For optional embedding search, the downloader below requires a Sonar source
@@ -87,29 +105,74 @@ checkout; Cargo installs only the executable. Download a model explicitly, then
 prepare vectors:
 
 ```sh
-python3 /path/to/sonar/scripts/download_model.py --model potion \
-  --destination .sonar/models/potion-code-16M-v2
-sonar embed --model .sonar/models/potion-code-16M-v2
-sonar investigate "Where are incoming requests authenticated?" \
-  --model .sonar/models/potion-code-16M-v2
+python3 /path/to/sonar/scripts/download_model.py --model potion
+sonar init --model "$HOME/.sonar/models/potion-code-16M-v2"
+sonar investigate "Where are incoming requests authenticated?"
 ```
 
 The downloader uses Python's standard library and fetches pinned, checksum-verified
-assets from Hugging Face. `investigate --model` combines lexical and embedding
-search. For `brief`, also supply `--retrieval hybrid`.
+assets from Hugging Face. Models default to `~/.sonar/models/potion-code-16M-v2`
+or, with `--model minilm`, `~/.sonar/models/all-MiniLM-L6-v2`. These files are
+shared across repositories and Sonar checkouts. Repeating the download command
+reuses valid files and downloads only missing or damaged assets. Use
+`--destination /path/to/model` to override the download location.
+
+`init --model` prepares source embeddings and saves the model path. `investigate`,
+`brief`, `batch`, `diagnose`, and MCP reuse it for hybrid search by default.
+Use `brief --retrieval lexical` for model-free matching. Model files are used only
+for local search; your AI client keeps its own model. Native commands never
+download assets automatically.
+
+For a manually maintained index, run `embed --model PATH`, pass the same model
+to `investigate` or MCP, and use `brief --retrieval hybrid --model PATH`.
+A standalone `embed` or model download does not save project preferences.
+Embeddings remain in each repository's index even when models are shared.
+
+## Reuse existing model downloads
+
+Older downloader versions used `.sonar/models/` in the current directory. To
+reuse those assets without another download, run from the project or Sonar
+checkout containing them:
+
+```sh
+mkdir -p "$HOME/.sonar/models"
+if [ ! -e "$HOME/.sonar/models/potion-code-16M-v2" ]; then
+  cp -R .sonar/models/potion-code-16M-v2 "$HOME/.sonar/models/"
+fi
+python3 /path/to/sonar/scripts/download_model.py --model potion
+```
+
+For MiniLM, copy `all-MiniLM-L6-v2` instead and verify with `--model minilm`.
+Update explicit `--model` paths in queries, MCP registrations, and setup/refresh
+commands to point to the home copy. Copying identical assets preserves existing
+embeddings. You can also keep the old location and continue passing its path.
 
 ## Refresh and local data
 
-After source changes, rerun `index` with the same options, followed by whichever
-preparation commands you use: `index-navigation`, `resolve`, and `embed`. Repeat
-options such as `--resources yaml` when indexing. Rerun resolution after relevant
-dependency or build-configuration changes, too. There is no automatic watcher.
+After source changes, run:
 
-After upgrading Sonar, reindex and repeat optional preparation. Briefs omit changed
-or deleted files while stale; explicit handle navigation needs current sources.
+```sh
+sonar status
+sonar init
+```
+
+`init` refreshes the saved preparation plan. MCP clients can call `sonar_init`.
+Optional `embed-usage`, `index-quantities`, and imported compiler exports are
+separate from this plan; repeat them after a refresh if you use them.
+
+For a manually maintained index, rerun `index` with the same options, then repeat
+`index-navigation`, `resolve`, and `embed` as needed. Rerun resolution after
+relevant dependency or build-configuration changes, too. There is no watcher.
+
+After upgrading Sonar, rerun `init` and any separately managed preparation.
+Briefs omit changed or deleted files while stale; explicit handle navigation
+needs current sources.
 
 The SQLite index contains source text and derived data, with possible `-wal` and
-`-shm` sidecars. Add `.sonar/` to the target repository's `.gitignore` if needed.
+`-shm` sidecars. Initialization ignores `.sonar/` and any custom database inside
+the repository, including SQLite sidecars.
+Indexes, source embeddings, and compiler analysis belong to that repository;
+downloaded models are shared in `~/.sonar/models/`.
 Initial dependency/model setup can require downloads; indexing and queries use
 local files. Queries still need access to the indexed source tree.
 
