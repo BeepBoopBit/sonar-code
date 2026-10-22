@@ -82,7 +82,9 @@ resolution needs Node.js, a local TypeScript 5.x/6.x compiler, and project
 dependencies. Run both resolution commands for a mixed Rust/TypeScript repository.
 Recorded relationships are static evidence, and coverage can be incomplete.
 
-For optional embedding search, download a model explicitly, then prepare vectors:
+For optional embedding search, the downloader below requires a Sonar source
+checkout; Cargo installs only the executable. Download a model explicitly, then
+prepare vectors:
 
 ```sh
 python3 /path/to/sonar/scripts/download_model.py --model potion \

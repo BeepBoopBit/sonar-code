@@ -74,10 +74,16 @@ queries do not download them automatically.
 ## MCP connection problems
 
 Confirm the configured executable and database exist, using absolute paths. Check
-the client's error output, and start a new session after setup or reinstalling.
+that the client's execution environment can also read the indexed repository.
+Inspect its error output, and start a new session after setup or upgrading.
 
-An existing connection name requires an explicit `setup --replace`; use `refresh`
-when only updating the index. Repeat all preparation flags on refresh.
+For Codex, `codex mcp get sonar-project` shows the registered command. If
+`sonar_status` reports the wrong root, select that project's database in the client
+configuration. Each repository needs a separate index.
+
+If you use the checkout's `dev.sh` helper, an existing connection name requires
+`setup --replace`; use `refresh` when only updating the index. Repeat all original
+preparation flags on refresh.
 
 Running `sonar mcp` directly can appear idle because it waits for protocol messages
 on stdin. It is not a terminal prompt or web server. See [MCP setup](mcp.md).

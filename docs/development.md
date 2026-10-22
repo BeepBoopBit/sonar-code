@@ -27,7 +27,7 @@ components. The helper reports missing tools with `./dev.sh doctor`.
 | `fmt` | Rewrite Rust files using rustfmt. |
 | `test ...` | Forward arguments to `cargo test`, then run the Python installer tests. |
 | `build` | Build the release executable at `target/release/sonar`. |
-| `setup`, `refresh` | Prepare an index and manage its agent connection; see [MCP setup](mcp.md). |
+| `setup`, `refresh` | Prepare an index and manage its agent connection; see [checkout MCP helper](#checkout-mcp-helper). |
 
 Builds, tests, and checks run in the checkout even when the helper is called from
 another directory. `run` executes Sonar in your current directory, so relative
@@ -36,6 +36,36 @@ repository and database paths keep their usual meaning.
 `install` and `reinstall` always use release builds; the older `--prod` spelling
 still works. Installation does not require sudo or modify shell settings. Use
 `reinstall` to pick up code changes, then restart running MCP clients.
+
+## Checkout MCP helper
+
+With Sonar and Codex CLI installed, this checkout provides a convenience helper:
+
+```sh
+./dev.sh setup /path/to/your/repo --name sonar-project
+./dev.sh refresh /path/to/your/repo --name sonar-project
+```
+
+`setup` indexes the repository, prepares source navigation, and registers its
+Codex connection. Start a new Codex session afterward. `refresh` updates the
+index for the existing connection. Cargo-installed users can instead follow
+[MCP setup](mcp.md) using only `sonar` commands.
+
+| Option | Purpose |
+| --- | --- |
+| `--resolve` | Prepare Rust relationships with rust-analyzer. |
+| `--typescript /path/to/node_modules/typescript` | Prepare TypeScript relationships with Node.js. |
+| `--model /path/to/model` | Prepare embeddings and configure hybrid MCP search. |
+| `--resources yaml` | Include bounded YAML resources. |
+| `--db /path/to/project.sqlite` | Override the database location. |
+| `--replace` | Replace an existing named Codex connection during `setup`. |
+
+By default the database is `.sonar/mcp/<name>.sqlite` under the Sonar checkout,
+with preparation reports beside it. Without `--name`, the name is
+`sonar-<repository-directory-name>`. Relative paths use your current directory.
+Repeat all original preparation options when refreshing; the helper does not
+save a refresh profile. See [optional preparation](usage.md#optional-preparation)
+for dependencies.
 
 ## Tests and configuration
 

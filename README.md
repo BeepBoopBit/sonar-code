@@ -16,11 +16,12 @@ cargo install sonar-code --locked
 The executable is named `sonar`:
 
 ```sh
-sonar index /path/to/your/repo
+cd /path/to/your/repo
+sonar index .
 sonar investigate "Where are incoming requests authenticated?"
 ```
 
-The index is saved to `.sonar/index.sqlite` in your current directory. Run queries from the same directory, and rerun `sonar index /path/to/your/repo` after source changes.
+The index is saved to `.sonar/index.sqlite` in your current directory. Run queries from the same directory, and rerun `sonar index .` after source changes.
 
 Use `sonar --db /path/to/index.sqlite <command>` to select a different index. Each index belongs to one repository.
 
@@ -47,21 +48,16 @@ Run `sonar --help` or `sonar <command> --help` for all options.
 
 ## Use with coding agents
 
-Sonar provides an MCP server over stdio. Configure your client to launch:
+Agents with shell access can use the CLI commands above. For MCP clients, prepare
+an index and configure the client to launch Sonar over stdio:
 
 ```sh
 sonar --db /absolute/path/to/index.sqlite mcp
 ```
 
-See [MCP configuration examples](docs/mcp.md#configure-another-client) for JSON and TOML setup. Replace the executable and database paths with your own.
-
-With Codex CLI installed, the helper can index a repository and register its MCP connection:
-
-```sh
-./dev.sh setup /path/to/your/repo
-```
-
-Start a new Codex session after setup. Use `./dev.sh refresh /path/to/your/repo` after source changes; see `./dev.sh --help` for optional preparation settings.
+See [agent setup](docs/agents.md) for a setup prompt and reusable agent
+instructions, or [MCP setup](docs/mcp.md) for Codex, JSON, and TOML configuration.
+These workflows use the published CLI and do not require a Sonar checkout.
 
 ## Development
 
@@ -80,6 +76,7 @@ Local indexes, models, build output, and historical evaluation data are gitignor
 ## Documentation
 
 - [Usage](docs/usage.md) — search, results, supported files, and index updates.
+- [Agent setup](docs/agents.md) — install with an agent and guide its use of Sonar.
 - [MCP setup](docs/mcp.md) — connect agents and refresh their indexes.
 - [Troubleshooting](docs/troubleshooting.md) — common errors and recovery steps.
 - [Development](docs/development.md) — helper commands, tests, and project layout.
