@@ -291,6 +291,8 @@ pub fn embed_index_with_options(
                     | "6-adapters-ast"
                     | "7-typescript"
                     | "7-typescript-ast"
+                    | "8-go"
+                    | "8-go-ast"
             )
         ),
         "run `sonar index` to refresh embedding inputs"

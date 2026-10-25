@@ -16,6 +16,8 @@ pub struct Configuration {
     pub model: Option<PathBuf>,
     pub rust: bool,
     pub typescript: Option<PathBuf>,
+    #[serde(default)]
+    pub go: Option<crate::GoOptions>,
 }
 
 fn saved(root: &Path) -> Result<Option<Configuration>> {
@@ -82,6 +84,7 @@ pub fn configuration(root: Option<&Path>, db: Option<&Path>) -> Result<Configura
             model: None,
             rust: false,
             typescript: None,
+            go: None,
         }))
 }
 
@@ -113,6 +116,10 @@ pub fn initialize(config: &Configuration) -> Result<Value> {
     if let Some(compiler) = &config.typescript {
         eprintln!("Sonar: resolving TypeScript relationships");
         crate::resolve_typescript(&config.db, Path::new("node"), Some(compiler), None)?;
+    }
+    if let Some(options) = &config.go {
+        eprintln!("Sonar: resolving Go relationships");
+        crate::resolve_go(&config.db, options)?;
     }
     if let Some(model) = &config.model {
         eprintln!("Sonar: preparing embeddings");

@@ -411,19 +411,13 @@ fn run_query(
         .iter()
         .any(|l| l.semantic_freshness == "current");
     let mut notices = crate::languages::coverage_notices(&language_states);
-    if language_states
-        .iter()
-        .any(|l| l.language == "typescript" && l.semantic_freshness == "current")
-        && let Some(notice) = crate::languages::typescript::semantic::coverage_notice(&tx)?
-    {
-        notices.push(notice);
-    }
+    notices.extend(crate::semantic::coverage_notices(&tx, &language_states)?);
     if !exclusions.is_empty() {
         notices.push(Notice::new("path_exclusions", format!(
             "{} indexed files are omitted by explicit path exclusions. Exclusions do not change index freshness or prove feature absence.", excluded_files.len())));
     }
     if semantic_current {
-        notices.push(Notice::new("semantic_coverage", if language_states.iter().any(|l| l.language == "typescript" && l.files > 0) {
+        notices.push(Notice::new("semantic_coverage", if language_states.iter().any(|l| l.language != "rust" && l.capabilities.resolved_references && l.files > 0) {
             "Relationships use the recorded compiler analysis profiles. Unmapped/external occurrences and ambiguous definitions are omitted; static calls do not prove runtime dispatch."
         } else {
             "Relationships use the recorded Rust analysis profile. Unmapped/external occurrences and ambiguous definitions are omitted; static calls do not prove runtime dispatch. Syntax candidates include inactive cfg branches."
@@ -434,7 +428,7 @@ fn run_query(
     {
         let message = if language_states
             .iter()
-            .any(|l| l.language == "typescript" && l.files > 0)
+            .any(|l| l.language != "rust" && l.capabilities.resolved_references && l.files > 0)
         {
             format!(
                 "Current compiler-resolved relationships are unavailable. {}",
@@ -778,7 +772,7 @@ fn run_query(
     let navigation_diagnostic = if navigation != crate::NavigationPolicy::Off {
         if !navigation_current {
             notices.push(Notice::new("navigation_unavailable", if navigation == crate::NavigationPolicy::Uses {
-                if language_states.iter().any(|l| l.language == "typescript" && l.files > 0) {
+                if language_states.iter().any(|l| l.language != "rust" && l.capabilities.resolved_references && l.files > 0) {
                     format!("Current compiler-resolved references are unavailable. {} Retrieval is unchanged.", crate::semantic::setup(&language_states))
                 } else {
                     "Current compiler-resolved references are unavailable; run sonar resolve after indexing. Retrieval is unchanged.".into()

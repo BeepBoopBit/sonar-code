@@ -14,7 +14,7 @@ mod runtime;
 
 use runtime::{Operation, Worker};
 
-const INSTRUCTIONS: &str = "Check sonar_status first. If initialized=false, call sonar_init to explicitly prepare this server's bound repository. Search/navigation require initialization. The init tool writes local project state and ignore rules; query tools only read. Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust and TypeScript/TSX support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Empty results never establish feature absence. Paths are relative to the root reported by status. Use sonar_init to refresh saved preparation settings, or use explicit local CLI indexing, embedding, and resolution operations. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
+const INSTRUCTIONS: &str = "Check sonar_status first. If initialized=false, call sonar_init to explicitly prepare this server's bound repository. Search/navigation require initialization. The init tool writes local project state and ignore rules; query tools only read. Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust, TypeScript/TSX, and Go support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Empty results never establish feature absence. Paths are relative to the root reported by status. Use sonar_init to refresh saved preparation settings, or use explicit local CLI indexing, embedding, and resolution operations. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
 
 #[derive(Clone)]
 struct SonarServer {
@@ -113,7 +113,7 @@ impl SonarServer {
     }
 
     #[tool(
-        description = "Inspect a handle's recorded containment, calls, references or literal document/resource links, with source evidence and pagination. Scope constrains both endpoints. Missing analysis is reported; static links do not prove runtime behavior.",
+        description = "Inspect a handle's recorded containment, calls, references, Go interface implementations, or literal document/resource links, with source evidence and pagination. Use relation=implements and direction=incoming on an interface or its method to find implementations. Scope constrains both endpoints. Missing analysis is reported; static links do not prove runtime behavior.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -129,7 +129,7 @@ impl SonarServer {
     }
 
     #[tool(
-        description = "Search a known handle's bounded call/reference neighborhood for a behavior and return an evidenced route to each match. Requires current compiler analysis. Scope applies to the entire route; direction applies at every hop. Inspect explicit traversal limits.",
+        description = "Search a known handle's bounded call/reference neighborhood for a behavior and return an evidenced route to each match. Use relation=implements for Go interface implementation links. Requires current compiler analysis. Scope applies to the entire route; direction applies at every hop. Inspect explicit traversal limits.",
         annotations(
             read_only_hint = true,
             destructive_hint = false,

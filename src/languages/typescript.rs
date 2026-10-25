@@ -147,6 +147,9 @@ impl LanguageAdapter for TypeScript {
     fn semantic_profile(&self, conn: &rusqlite::Connection) -> Result<Option<String>> {
         crate::store::metadata(conn, "typescript_semantic_profile")
     }
+    fn coverage_notice(&self, conn: &rusqlite::Connection) -> Result<Option<crate::Notice>> {
+        semantic::coverage_notice(conn)
+    }
     fn semantic_current(
         &self,
         conn: &rusqlite::Connection,

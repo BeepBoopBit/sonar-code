@@ -455,7 +455,7 @@ fn python_environment_directories_and_other_languages_are_excluded() {
     assert_eq!(report.files, 5);
     assert_eq!(
         sonar::supported_languages(),
-        vec!["rust", "python", "typescript"]
+        vec!["rust", "python", "typescript", "go"]
     );
     assert_eq!(sonar::source_language("pkg/model.pyi"), Some("python"));
 }

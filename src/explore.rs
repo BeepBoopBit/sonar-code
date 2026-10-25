@@ -66,6 +66,7 @@ pub enum Relation {
     Contains,
     Calls,
     References,
+    Implements,
     Embeds,
     Documents,
 }
@@ -77,6 +78,7 @@ impl Relation {
             Self::Contains => "contains",
             Self::Calls => "calls",
             Self::References => "references",
+            Self::Implements => "implements",
             Self::Embeds => "embeds",
             Self::Documents => "documents",
         }
@@ -185,6 +187,12 @@ impl Snapshot<'_> {
             return Ok(Notice::new(
                 "graph_unavailable",
                 "Current TypeScript compiler relationships are unavailable; run `sonar resolve --typescript <compiler module>` after indexing.",
+            ));
+        }
+        if crate::source_language(&path) == Some("go") {
+            return Ok(Notice::new(
+                "graph_unavailable",
+                "Current Go compiler relationships are unavailable; run `sonar resolve --go` after indexing.",
             ));
         }
         Ok(Notice::new(
@@ -500,7 +508,7 @@ pub fn neighbors(db: &Path, anchor: &str, options: &NeighborOptions) -> Result<N
             sources.push(format!("SELECT from_id,to_id,kind,path,min(line) line,count(*) occurrences FROM semantic_edges WHERE {direction} GROUP BY from_id,to_id,kind,path"));
         } else if matches!(
             options.relation,
-            Relation::All | Relation::Calls | Relation::References
+            Relation::All | Relation::Calls | Relation::References | Relation::Implements
         ) {
             response.notices.push(s.graph_notice(id)?);
         }
@@ -515,21 +523,18 @@ pub fn neighbors(db: &Path, anchor: &str, options: &NeighborOptions) -> Result<N
         if semantic
             && matches!(
                 options.relation,
-                Relation::All | Relation::Calls | Relation::References
+                Relation::All | Relation::Calls | Relation::References | Relation::Implements
             )
         {
-            response.notices.push(Notice::new("semantic_coverage", if response.anchor.as_ref().is_some_and(|l| l.language.as_deref() == Some("typescript")) {
+            response.notices.push(Notice::new("semantic_coverage", if response.anchor.as_ref().is_some_and(|l| l.language.as_deref() != Some("rust")) {
                 "Recorded compiler analysis omits unmapped/external and ambiguous targets. Static calls do not prove runtime dispatch."
             } else {
                 "Recorded Rust analysis omits unmapped/external and ambiguous targets. Static calls do not prove runtime dispatch."
             }));
-            if response
-                .anchor
-                .as_ref()
-                .is_some_and(|l| l.language.as_deref() == Some("typescript"))
-                && let Some(notice) =
-                    crate::languages::typescript::semantic::coverage_notice(s.conn)?
-            {
+            if let Some(notice) = crate::semantic::provider_notice(
+                s.conn,
+                response.anchor.as_ref().and_then(|l| l.language.as_deref()),
+            )? {
                 response.notices.push(notice);
             }
         }

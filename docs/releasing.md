@@ -6,6 +6,9 @@ Cargo builds from source, so users need Rust 1.88+ and native build tools.
 
 Publishing runs only through [GitHub Actions](../.github/workflows/publish.yml)
 when a version tag such as `v0.1.0` is pushed. Branch pushes do not publish.
+Branch pushes and pull requests run the shared [CI workflow](../.github/workflows/ci.yml).
+Releases must pass that same workflow, including real compiler integration for
+Rust, TypeScript 5/6, and Go, before the publishing job starts.
 
 ## Release setup
 
@@ -23,7 +26,9 @@ Windows before advertising support for those platforms.
 From the checkout:
 
 ```sh
-./dev.sh test
+# Install rust-analyzer/rust-src and provide Go 1.26+, Node.js, and TypeScript.
+# SONAR_TEST_TYPESCRIPT is the absolute TypeScript package directory.
+SONAR_REQUIRE_COMPILERS=1 ./dev.sh test
 ./dev.sh check
 cargo +1.88.0 check --locked --all-targets
 cargo package --list --locked
@@ -36,16 +41,16 @@ packaging commands. Use a committed, clean checkout for the actual release.
 
 Inspect the package list: it must contain `LICENSE`, `Cargo.lock`,
 `src/languages/typescript/compiler.cjs`, `src/cli_help.rs`, `src/onboarding.rs`,
-and `src/project.rs`, and exclude local indexes, models, evaluation data,
-and build output. The dry run packages and builds the source
+`src/languages/go/analyzer.go`, and `src/project.rs`, and exclude local indexes,
+models, evaluation data, and build output. The dry run packages and builds the source
 without uploading it.
 
 Test installation from that extracted package into a temporary directory.
-Replace `0.1.1` below with the version being released:
+Replace `0.1.2` below with the version being released:
 
 ```sh
 install_root="$(mktemp -d)"
-cargo install --path target/package/sonar-code-0.1.1 --locked --root "$install_root"
+cargo install --path target/package/sonar-code-0.1.2 --locked --root "$install_root"
 "$install_root/bin/sonar" --version
 "$install_root/bin/sonar" --help
 "$install_root/bin/sonar" init --help
@@ -60,17 +65,23 @@ verify `sonar status` and a search using the [agent setup workflow](agents.md).
 ## Publish
 
 Update `Cargo.toml` and `Cargo.lock`, then commit and push the release files.
-Push a tag matching the new version; for example, after setting version `0.1.1`:
+Include the accepted API changes and upgrade instructions from the
+[release notes](../CHANGELOG.md) in the release commit and published description.
+The `0.1.2` release intentionally includes early-stage Rust library API changes.
+
+Push a tag matching the new version; for example, after setting version `0.1.2`:
 
 ```sh
 git push origin main
-git tag -a v0.1.1 -m "Release 0.1.1"
-git push origin v0.1.1
+git tag -a v0.1.2 -m "Release 0.1.2"
+git push origin v0.1.2
 ```
 
-The workflow checks the tag, formatting, Clippy, Rust and helper tests, Rust 1.88
-compatibility, and a publishing dry run. Publication starts only after all checks
-pass. Follow its progress in the repository's **Actions** tab. Do not run a real
+The workflow checks the tag and reuses CI for formatting, Clippy, all language and
+helper tests, real rust-analyzer analysis, TypeScript 5/6 and Go compiler checks,
+Go 1.18 analysis compatibility, Rust 1.88 compatibility, and a publishing dry run.
+Publication starts only after all checks pass. Follow its progress in the
+repository's **Actions** tab. Do not run a real
 `cargo publish` locally.
 
 Published versions cannot be overwritten. Each release needs a new version and

@@ -328,6 +328,20 @@ class DevInstallerTests(unittest.TestCase):
         self.assertEqual(self.calls("codex"), [])
         self.assertEqual(self.state.read_text(), "existing settings")
 
+    def test_go_refresh_forwards_build_settings_and_preserves_argument_boundaries(self):
+        self.install()
+        go = self.work / "go tool with spaces"
+        go.write_text("#!/bin/sh\nexit 0\n")
+        go.chmod(0o755)
+        self.log.write_text("")
+        self.run_dev("refresh", self.repo, "--db", self.db, "--go", "--go-command", go,
+                     "--go-tags", "integration,extra", "--go-os", "linux", "--go-arch", "arm64")
+        resolve = [r["args"] for r in self.calls("sonar") if len(r["args"]) > 2 and r["args"][2] == "resolve"]
+        self.assertEqual(resolve, [["--db", str(self.db), "resolve", "--go", "--go-command", str(go),
+                                   "--go-tags", "integration,extra", "--go-os", "linux", "--go-arch", "arm64"]])
+        self.assertTrue(Path(str(self.db) + ".go-resolve.json").exists())
+        self.assertEqual(self.calls("codex"), [])
+
     def test_failed_preparation_never_registers(self):
         self.install()
         for operation in ["index", "index-navigation", "resolve", "embed"]:
@@ -354,7 +368,7 @@ class DevInstallerTests(unittest.TestCase):
         self.install()
         for options in [("--model",), ("--model", "missing"),
                         ("--resources", "invalid"), ("--name", "../escape"), ("--name", "-flag"),
-                        ("--db", "/"), ("--unknown",)]:
+                        ("--db", "/"), ("--unknown",), ("--go-command", "go")]:
             self.run_dev("setup", self.repo, "--db", self.db, *options, success=False)
         self.run_dev("refresh", self.repo, "--replace", success=False)
         self.assertFalse(self.db.exists())

@@ -69,12 +69,20 @@ Response IDs such as `s1` are not handles. Obtain fresh handles after reindexing
 | Rust `.rs` | Search and declarations; compiler relationships after `resolve`. |
 | Python `.py`, `.pyi` | Search and declarations; resolved calls and field uses are unavailable. |
 | TypeScript `.ts`, `.tsx`, `.mts`, `.cts`, including declarations | Search and declarations; compiler relationships after TypeScript resolution. |
+| Go `.go`, including `_test.go` | Search and declarations; compiler relationships and field uses after Go resolution. |
 | Markdown `.md` | Searchable document sections. |
 | YAML `.yaml`, `.yml` | Optional plain-text resources with `init --resources yaml`; maximum 256 KiB per file. |
 
 Languages are detected together. Indexing honors repository `.gitignore` and
 `.ignore` rules, skips hidden files and dependency/build directories, and does
 not follow symlinks. Parent and global Git ignore rules are not used.
+
+Go indexing needs no Go installation or downloaded dependencies. It includes
+receiver-qualified methods (such as `Store.Claim`), structs, interfaces, fields,
+type aliases, package variables/constants, and doc comments. All declarations in
+`_test.go` files are classified as test code. Build tags and platform suffixes do
+not filter syntax indexing; all visible Go source files are searchable. Rerun
+`sonar init` to include Go files in an index created before Go support.
 
 ## Optional preparation
 
@@ -86,18 +94,70 @@ Save additional preparation for later refreshes using these options:
 sonar init --resolve
 # TypeScript calls, references, and field uses:
 sonar init --typescript /path/to/node_modules/typescript
+# Go calls, references, and field uses:
+sonar init --go
 # Include YAML text resources and select source chunking:
 sonar init --resources yaml --chunking ast
 ```
 
 Options can be combined for a mixed repository. Saved settings include resources,
-chunking, Rust and TypeScript preparation, and a local embedding model. Explicit
+chunking, Rust, TypeScript, and Go preparation, and a local embedding model. Explicit
 flags override saved values; later `sonar init` repeats the saved plan.
 For manual workflows, `index-navigation` and `resolve` remain separate commands.
 Rust resolution needs rust-analyzer, the target's Rust toolchain, and locally
 available dependencies; Cargo analysis runs locked and offline. TypeScript
 resolution needs Node.js, a local TypeScript 5.x/6.x compiler, and project
 dependencies. Configure both language options for a mixed repository.
+Go resolution needs Go 1.18+ and a toolchain compatible with the project's Go
+version. Sonar embeds its analyzer source; it uses Go's package loader and type
+checker without third-party analyzer dependencies. Prepare target dependencies
+with your normal Go workflow before resolving. Analysis runs offline with a local
+toolchain and read-only module settings; it does not download modules or toolchains.
+It includes test packages, nested modules, active `go.work` modules, and vendored
+dependencies. Use
+`--go-command /path/to/go` for a specific executable, `--go-tags integration,extra`
+for build tags, and `--go-os linux --go-arch arm64` for a target. These settings are
+saved by `init`. Manual preparation is `sonar resolve --go` after indexing.
+
+Go's semantic graph covers the selected build context, while syntax indexing
+continues to include all visible Go files. Resolution reports included/excluded
+paths and compiler diagnostics. Calls through local function values, such as
+`run := worker.Handle; run()`, link to their declared function or method when the
+variable has a single initializer and is never reassigned or addressed. This
+includes local alias chains, generic function instances, and function type
+conversions; the call evidence identifies the invocation of the alias. Callback
+parameters, function-valued globals/fields, returned functions, and anonymous
+function targets remain unresolved. Calls to interface methods point to the
+interface declaration; concrete runtime dispatch is not inferred.
+
+After Go resolution, find types or methods that implement an indexed interface:
+
+```sh
+sonar neighbors '<interface-or-method-handle>' --relation implements --direction incoming
+sonar follow '<interface-method-handle>' "store" --relation implements --direction incoming
+```
+
+Implementation links run from a concrete type to an interface, and from an
+implementing method to the corresponding interface method. A type link means
+either its value or pointer method set satisfies the complete interface.
+Promoted methods and package-private method identity follow Go's type checker.
+For generics, a link means at least one observed instantiation matches; results
+point to the original declarations. Sonar compares indexed declarations within
+each package load. Empty interfaces, type-set constraints, and loads with type
+errors produce no implementation links. These links describe static type
+compatibility. Interface call sites continue to target their interface methods.
+The default `follow` relation traverses calls and references; select `implements`
+to explore implementations. MCP exposes the same options.
+
+Field access describes named source occurrences and positional struct
+initializers, such as the values in `Config{8080, true}`. Positional values map to
+fields in compiler-reported declaration order, including through aliases and
+instantiated generic types. Their evidence spans identify the initializer value;
+any references within that value remain available separately. Alias mutation
+effects are not inferred. Queries consume saved evidence without starting Go;
+changes to source, modules, dependencies, toolchain, or relevant environment
+settings make the saved graph stale.
+
 Recorded relationships are static evidence, and coverage can be incomplete.
 
 For optional embedding search, the downloader below requires a Sonar source

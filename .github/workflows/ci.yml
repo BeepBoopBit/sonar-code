@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
+
+jobs:
+  languages:
+    name: All languages / TypeScript ${{ matrix.typescript }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        typescript: ["5.9.3", "6.0.3"]
+    env:
+      SONAR_REQUIRE_COMPILERS: "1"
+      SONAR_TEST_GO: go
+      SONAR_TEST_RUST_ANALYZER: rust-analyzer
+      SONAR_TEST_TYPESCRIPT: ${{ github.workspace }}/.sonar/ci/typescript/node_modules/typescript
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust and analysis tools
+        run: |
+          rustup toolchain install stable --profile minimal --no-self-update
+          rustup override set stable
+          rustup component add rustfmt clippy rust-analyzer rust-src
+
+      - name: Install Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "24"
+          package-manager-cache: false
+
+      - name: Install Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.27.3"
+          cache: false
+
+      - name: Install TypeScript
+        env:
+          TYPESCRIPT_VERSION: ${{ matrix.typescript }}
+        run: npm install --prefix .sonar/ci/typescript --no-audit --no-fund --package-lock=false "typescript@$TYPESCRIPT_VERSION"
+
+      - name: Verify compiler tools
+        run: |
+          rust-analyzer --version
+          go version
+          node --version
+          node -e 'console.log("TypeScript " + require(process.env.SONAR_TEST_TYPESCRIPT).version)'
+
+      - name: Check formatting and Clippy
+        if: matrix.typescript == '6.0.3'
+        run: ./dev.sh check
+
+      - name: Test all languages, CLI, MCP, and Python helpers
+        run: ./dev.sh test
+
+      - name: Install minimum supported Go
+        if: matrix.typescript == '6.0.3'
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: "1.18.10"
+          cache: false
+
+      - name: Check Go 1.18 analysis compatibility
+        if: matrix.typescript == '6.0.3'
+        run: cargo test --locked --test go_minimum
+
+      - name: Check Cargo package
+        if: matrix.typescript == '6.0.3'
+        run: |
+          cargo package --list --locked
+          cargo publish --dry-run --locked
+
+  minimum-rust:
+    name: Minimum Rust 1.88
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install minimum supported Rust
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --no-self-update
+          rustup override set 1.88.0
+
+      - name: Check all targets
+        run: cargo check --locked --all-targets

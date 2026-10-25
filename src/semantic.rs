@@ -1,7 +1,9 @@
 //! Dispatch analysis through language adapters; the legacy SCIP import is Rust's provider.
+pub(crate) mod inputs;
 pub(crate) use crate::languages::rust::semantic::callee_name;
 pub use crate::languages::rust::semantic::{SemanticManifest, SemanticReport, import_scip};
 use anyhow::{Result, ensure};
+use rusqlite::Connection;
 use std::path::Path;
 
 pub fn resolve(db: &Path, analyzer: &Path, config: Option<&Path>) -> Result<SemanticReport> {
@@ -16,38 +18,68 @@ pub fn resolve(db: &Path, analyzer: &Path, config: Option<&Path>) -> Result<Sema
     });
     ensure!(
         provider.is_some(),
-        "no resolved-analysis provider for the requested Rust languages; use resolve --typescript <compiler> for TypeScript"
+        "no resolved-analysis provider for the requested Rust languages; use resolve --typescript <compiler> for TypeScript or resolve --go for Go"
     );
     provider.unwrap().resolve(db, analyzer, config)
 }
 
-pub(crate) fn profile(conn: &rusqlite::Connection) -> Result<Option<String>> {
-    let rust = crate::store::metadata(conn, "semantic_profile")?;
-    let typescript = crate::store::metadata(conn, "typescript_semantic_profile")?;
-    Ok(match (rust, typescript) {
-        (Some(rust), Some(typescript)) => Some(
-            blake3::hash(format!("{rust}:{typescript}").as_bytes())
-                .to_hex()
-                .to_string(),
-        ),
-        (rust, typescript) => rust.or(typescript),
-    })
+pub(crate) fn profile(conn: &Connection) -> Result<Option<String>> {
+    let mut profile: Option<String> = None;
+    for adapter in crate::languages::ADAPTERS {
+        if let Some(next) = adapter.semantic_profile(conn)? {
+            profile = Some(match profile {
+                Some(previous) => blake3::hash(format!("{previous}:{next}").as_bytes())
+                    .to_hex()
+                    .to_string(),
+                None => next,
+            });
+        }
+    }
+    Ok(profile)
 }
 
-pub(crate) fn setup(states: &[crate::LanguageState]) -> &'static str {
-    let rust = states.iter().any(|s| s.language == "rust" && s.files > 0);
-    let typescript = states
-        .iter()
-        .any(|s| s.language == "typescript" && s.files > 0);
-    match (rust, typescript) {
-        (true, true) => {
-            "Run `sonar resolve` for Rust and `sonar resolve --typescript <compiler module>` for TypeScript after indexing."
+pub(crate) fn setup(states: &[crate::LanguageState]) -> String {
+    let mut commands = Vec::new();
+    for state in states.iter().filter(|s| s.files > 0) {
+        match state.language.as_str() {
+            "rust" => commands.push("`sonar resolve` for Rust"),
+            "typescript" => {
+                commands.push("`sonar resolve --typescript <compiler module>` for TypeScript")
+            }
+            "go" => commands.push("`sonar resolve --go` for Go"),
+            _ => {}
         }
-        (_, true) => {
-            "Run `sonar resolve --typescript <compiler module>` after indexing for compiler-resolved TypeScript calls and references."
-        }
-        _ => "Run `sonar resolve` after indexing for compiler-resolved calls and references.",
     }
+    format!(
+        "Run {} after indexing for compiler-resolved calls and references.",
+        commands.join(" and ")
+    )
+}
+
+pub(crate) fn provider_notice(
+    conn: &Connection,
+    language: Option<&str>,
+) -> Result<Option<crate::Notice>> {
+    match crate::languages::ADAPTERS
+        .iter()
+        .find(|a| Some(a.id()) == language)
+    {
+        Some(adapter) => adapter.coverage_notice(conn),
+        None => Ok(None),
+    }
+}
+
+pub(crate) fn coverage_notices(
+    conn: &Connection,
+    states: &[crate::LanguageState],
+) -> Result<Vec<crate::Notice>> {
+    let mut notices = Vec::new();
+    for state in states.iter().filter(|s| s.semantic_freshness == "current") {
+        if let Some(notice) = provider_notice(conn, Some(&state.language))? {
+            notices.push(notice);
+        }
+    }
+    Ok(notices)
 }
 
 /// Read-only TEMP view prevents one current provider from exposing another's stale edges.

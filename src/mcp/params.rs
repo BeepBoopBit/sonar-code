@@ -98,6 +98,7 @@ pub(super) enum Relation {
     Contains,
     Calls,
     References,
+    Implements,
     Embeds,
     Documents,
 }
@@ -108,6 +109,7 @@ impl From<Relation> for crate::Relation {
             Relation::Contains => Self::Contains,
             Relation::Calls => Self::Calls,
             Relation::References => Self::References,
+            Relation::Implements => Self::Implements,
             Relation::Embeds => Self::Embeds,
             Relation::Documents => Self::Documents,
         }
@@ -121,6 +123,7 @@ pub(super) enum FollowRelation {
     Semantic,
     Calls,
     References,
+    Implements,
 }
 impl From<FollowRelation> for crate::FollowRelation {
     fn from(value: FollowRelation) -> Self {
@@ -128,6 +131,7 @@ impl From<FollowRelation> for crate::FollowRelation {
             FollowRelation::Semantic => Self::Semantic,
             FollowRelation::Calls => Self::Calls,
             FollowRelation::References => Self::References,
+            FollowRelation::Implements => Self::Implements,
         }
     }
 }

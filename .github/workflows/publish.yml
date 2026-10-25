@@ -18,14 +18,10 @@ env:
   CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
-  check:
-    name: Check Rust ${{ matrix.rust }}
+  tag:
+    name: Check release tag
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        rust: [stable, "1.88.0"]
+    timeout-minutes: 5
     steps:
       - name: Check out tagged source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,33 +43,10 @@ jobs:
           print(f"Preparing sonar-code {version}")
           PY
 
-      - name: Install Rust
-        env:
-          RUST_TOOLCHAIN: ${{ matrix.rust }}
-        run: |
-          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --no-self-update
-          rustup override set "$RUST_TOOLCHAIN"
-          if [ "$RUST_TOOLCHAIN" = stable ]; then
-            rustup component add rustfmt clippy
-          fi
-
-      - name: Check formatting and Clippy
-        if: matrix.rust == 'stable'
-        run: ./dev.sh check
-
-      - name: Run Rust and installer tests
-        if: matrix.rust == 'stable'
-        run: ./dev.sh test
-
-      - name: Check minimum Rust version
-        if: matrix.rust == '1.88.0'
-        run: cargo check --locked --all-targets
-
-      - name: Check Cargo package
-        if: matrix.rust == 'stable'
-        run: |
-          cargo package --list --locked
-          cargo publish --dry-run --locked
+  check:
+    name: Release checks
+    needs: tag
+    uses: ./.github/workflows/ci.yml
 
   publish:
     name: Publish sonar-code

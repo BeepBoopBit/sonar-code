@@ -27,6 +27,7 @@ pub enum FollowRelation {
     Semantic,
     Calls,
     References,
+    Implements,
 }
 
 impl FollowRelation {
@@ -35,6 +36,7 @@ impl FollowRelation {
             Self::Semantic => "semantic",
             Self::Calls => "calls",
             Self::References => "references",
+            Self::Implements => "implements",
         }
     }
 }
@@ -160,7 +162,7 @@ fn edges(
         FROM semantic_edges e JOIN locations a ON a.id=e.from_id JOIN files af ON af.id=a.file_id
         JOIN locations b ON b.id=e.to_id JOIN files bf ON bf.id=b.file_id
         WHERE e.{endpoint}=?1 AND e.from_id!=e.to_id
-        AND e.kind IN ('calls','references') AND (?2='semantic' OR e.kind=?2)
+        AND ((?2='semantic' AND e.kind IN ('calls','references')) OR e.kind=?2)
         AND (?3='' OR af.path=?3 OR substr(af.path,1,length(?3)+1)=?3||'/')
         AND (?3='' OR bf.path=?3 OR substr(bf.path,1,length(?3)+1)=?3||'/')
         GROUP BY e.from_id,e.to_id,e.kind,e.path
@@ -295,7 +297,12 @@ pub(crate) fn run(
             return Ok(response);
         }
         response.notices.push(Notice::new("semantic_coverage",
-            "Trails connect recorded static calls/references, not execution order, data flow or runtime dispatch. Unmapped/external and ambiguous targets are omitted."));
+            "Trails connect recorded static relationships, not execution order, data flow or runtime dispatch. Unmapped/external and ambiguous targets are omitted."));
+        if let Some(notice) =
+            crate::semantic::provider_notice(s.conn, response.anchor.language.as_deref())?
+        {
+            response.notices.push(notice);
+        }
         let mut terms = if mode == RetrievalMode::Embedding {
             vec![]
         } else {

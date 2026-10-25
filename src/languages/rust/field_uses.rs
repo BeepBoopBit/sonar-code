@@ -664,6 +664,15 @@ pub fn field_uses(db: &Path, anchor: &str, options: &FieldUseOptions) -> Result<
                     &mut locations,
                     &mut use_,
                 )?;
+            } else if crate::source_language(&occurrence.path) == Some("go") {
+                crate::languages::go::semantic::enrich(
+                    s,
+                    occurrence.owner,
+                    occurrence.field,
+                    &occurrence.path,
+                    [occurrence.start, occurrence.end],
+                    &mut use_,
+                )?;
             } else if source.len() > 2 * 1024 * 1024 {
                 use_.limitations.push("syntax_file_budget".into());
             } else {

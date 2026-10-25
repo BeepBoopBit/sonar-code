@@ -182,9 +182,9 @@ pub fn index_with_resources(
         .filter(|path| !current.contains(path.as_str()))
         .collect();
     let extraction_version = if chunking == crate::Chunking::Ast {
-        "7-typescript-ast"
+        "8-go-ast"
     } else {
-        "7-typescript"
+        "8-go"
     };
     let reparse = metadata(&tx, "extraction_version")?.as_deref() != Some(extraction_version);
     let changed: Vec<_> = files
@@ -202,6 +202,7 @@ pub fn index_with_resources(
             [],
         )?;
         tx.execute("DELETE FROM metadata WHERE key='navigation_policy'", [])?;
+        tx.execute("DELETE FROM metadata WHERE key='go_semantic_snapshot'", [])?;
     }
     let workers = std::thread::available_parallelism()
         .map_or(1, |n| n.get())

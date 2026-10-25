@@ -40,6 +40,8 @@ pub use mcp::{project_status, serve_mcp, serve_mcp_project};
 mod search;
 mod semantic;
 mod store;
+#[cfg(test)]
+mod test_toolchains;
 mod text;
 mod workspace;
 
@@ -47,6 +49,7 @@ pub use embeddings::{
     Embedder, EmbeddingProgress, EmbeddingReport, EncodingPolicy, Representation, embed_index,
     embed_index_with, embed_index_with_options, embed_index_with_progress,
 };
+pub use languages::go::semantic::{GoOptions, GoReport, resolve as resolve_go};
 pub use languages::typescript::semantic::{TypeScriptReport, resolve as resolve_typescript};
 pub use model::*;
 pub use search::{SearchEngine, brief};

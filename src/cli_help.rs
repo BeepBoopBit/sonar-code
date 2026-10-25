@@ -45,7 +45,7 @@ Storage and optional preparation:
   ignore rule and saves settings in .sonar/project.json. Project commands reuse
   the saved database path. Each index belongs to one repository at its absolute path.
   Init includes document/resource links and module navigation. Use init --resolve
-  or init --typescript PATH for optional Rust or TypeScript calls and references.
+  or init --typescript PATH or init --go for optional compiler calls and references.
   Use init --model PATH to save optional embedding preparation and hybrid search.
   Queries do not download models. The optional source-checkout downloader stores
   shared models in ~/.sonar/models/; see "sonar embed --help".
@@ -66,7 +66,7 @@ Examples:
   Also index bounded YAML resources:
     sonar index . --resources yaml
 
-Supports Rust, Python, TypeScript/TSX, and Markdown. Indexing respects repository
+Supports Rust, Python, TypeScript/TSX, Go, and Markdown. Indexing respects repository
 .gitignore and .ignore rules, skips hidden files and build/dependency directories,
 and leaves source files unchanged. Basic search needs no model or API key.
 
@@ -158,6 +158,9 @@ pub const NEIGHBORS: &str = r#"Examples:
   Find callers after resolving compiler relationships:
     sonar neighbors 'RETURNED_HANDLE' --relation calls --direction incoming
 
+  Find implementations of a Go interface or interface method after Go resolution:
+    sonar neighbors 'INTERFACE_HANDLE' --relation implements --direction incoming
+
   Restrict results to a directory:
     sonar neighbors 'RETURNED_HANDLE' --scope src --limit 10
 
@@ -166,7 +169,7 @@ pub const NEIGHBORS: &str = r#"Examples:
 
 Copy a full handle from locate, outline, investigate, or brief --handles.
 Keep the same handle and options when continuing a page. Get new handles after
-reindexing. Calls and references need resolve for the relevant language;
+reindexing. Calls, references, and Go implementation links need resolve for the relevant language;
 document/resource links and module navigation need index-navigation.
 Output includes recorded relationships and their source evidence."#;
 
@@ -177,14 +180,20 @@ pub const FOLLOW: &str = r#"Examples:
   Search callers within two hops:
     sonar follow 'RETURNED_HANDLE' "retry" --relation calls --direction incoming --hops 2
 
+  Search implementations of a Go interface method:
+    sonar follow 'INTERFACE_METHOD_HANDLE' "store" --relation implements --direction incoming
+
   Restrict returned matches to functions in a directory:
     sonar follow 'RETURNED_HANDLE' "routing" --kind function --scope src --limit 3
 
 First prepare relationships with "sonar init --resolve" for Rust, or
-"sonar init --typescript PATH" for TypeScript. Copy a full handle from
+"sonar init --typescript PATH" for TypeScript, or "sonar init --go" for Go.
+Copy a full handle from
 locate, outline, investigate, or brief --handles. Reindexing requires new handles.
-The JSON matches include an evidenced trail through recorded calls/references
-and suggested source ranges. Read those ranges to verify the behavior.
+The JSON matches include an evidenced trail through recorded relationships
+and suggested source ranges. The default semantic relation follows calls and
+references; implements follows Go implementation links. Read the returned ranges
+to verify the behavior.
 Basic lexical matching needs no embedding model."#;
 
 pub const FIELD_USES: &str = r#"Examples:
@@ -198,7 +207,8 @@ pub const FIELD_USES: &str = r#"Examples:
     sonar field-uses 'RETURNED_HANDLE' --scope src --limit 10 --cursor 'RETURNED_CURSOR'
 
 First use "sonar init --resolve" for Rust or "sonar init --typescript PATH"
-for TypeScript relationships. Obtain a full field/function handle from outline or locate.
+for TypeScript, or "sonar init --go" for Go relationships.
+Obtain a full field/function handle from outline or locate.
 The scope restricts use-site files; declarations can be outside that directory.
 Keep the same handle and options across pages, and get fresh handles after
 reindexing. Python compiler-resolved field uses are unavailable."#;
@@ -244,10 +254,16 @@ pub const RESOLVE: &str = r#"Examples:
   Select a TypeScript project configuration:
     sonar resolve --typescript /path/to/node_modules/typescript --project /path/to/tsconfig.json
 
+  Resolve Go with a local toolchain and optional build tags:
+    sonar resolve --go
+    sonar resolve --go --go-command /path/to/go --go-tags integration,extra
+
 First run "sonar index .". Rust resolution needs rust-analyzer, the repository's
 Rust toolchain, and locally available dependencies; Cargo runs locked and offline.
 TypeScript resolution needs Node.js, a local TypeScript compiler, and project
-dependencies. Run both resolution commands for a mixed Rust/TypeScript repository.
+dependencies. Go resolution needs a compatible local Go toolchain and cached
+project dependencies; it runs offline and includes the selected build context
+and test packages. Run each relevant language resolution for a mixed repository.
 The --config option supplies Rust analyzer settings; --project selects TypeScript.
 
 Next, obtain a handle with outline or locate, then use neighbors or follow.
@@ -396,6 +412,10 @@ pub const INIT: &str = r#"Examples:
   Also prepare TypeScript relationships using a local compiler:
     sonar init --typescript /path/to/node_modules/typescript
 
+  Also prepare Go relationships and remember build settings:
+    sonar init --go
+    sonar init --go --go-tags integration --go-os linux --go-arch arm64
+
   Also prepare embedding search with an existing local model:
     sonar init --model /path/to/model
 
@@ -410,6 +430,7 @@ by default. Other optional steps, such as embed-usage, are run separately.
 
 Optional --resolve needs rust-analyzer and local project dependencies. TypeScript
 analysis needs Node.js, a local compiler module, and project dependencies.
+Go analysis needs a compatible local Go toolchain and cached project dependencies.
 Model assets must already exist; Sonar does not download them automatically.
 Next, search with sonar investigate or connect a client with sonar setup codex/claude.
 MCP clients can perform the same initialization using the sonar_init tool."#;

@@ -6,6 +6,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use tree_sitter::{Node, Parser, Tree};
 
+pub(crate) mod go;
 pub(crate) mod python;
 pub(crate) mod rust;
 pub(crate) mod typescript;
@@ -80,6 +81,9 @@ pub(crate) trait LanguageAdapter: Sync {
     fn semantic_profile(&self, _conn: &Connection) -> Result<Option<String>> {
         Ok(None)
     }
+    fn coverage_notice(&self, _conn: &Connection) -> Result<Option<crate::Notice>> {
+        Ok(None)
+    }
     fn semantic_current(
         &self,
         _conn: &Connection,
@@ -102,7 +106,8 @@ pub(crate) trait LanguageAdapter: Sync {
 static RUST: rust::Rust = rust::Rust;
 static PYTHON: python::Python = python::Python;
 static TYPESCRIPT: typescript::TypeScript = typescript::TypeScript;
-pub(crate) static ADAPTERS: [&'static dyn LanguageAdapter; 3] = [&RUST, &PYTHON, &TYPESCRIPT];
+static GO: go::Go = go::Go;
+pub(crate) static ADAPTERS: [&'static dyn LanguageAdapter; 4] = [&RUST, &PYTHON, &TYPESCRIPT, &GO];
 
 pub(crate) fn for_path(path: &str) -> Option<&'static dyn LanguageAdapter> {
     let extension = Path::new(path).extension()?.to_str()?;

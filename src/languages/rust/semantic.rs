@@ -583,11 +583,9 @@ mod tests {
 
     #[test]
     fn mixed_providers_preserve_each_other_and_hide_only_stale_language_edges() {
-        let compiler = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join(".sonar/typescript/oracle/node_modules/typescript");
-        if !compiler.exists() {
+        let Some(compiler) = crate::test_toolchains::typescript() else {
             return;
-        }
+        };
         let f = fixture(false);
         fs::write(f.root.join("module.ts"), "import type {Missing} from 'missing-library'\nexport function tsAccept(): Missing { return {} as Missing }\nexport function tsCall() { return tsAccept() }\n").unwrap();
         fs::write(

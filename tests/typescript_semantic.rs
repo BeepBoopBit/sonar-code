@@ -7,19 +7,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[path = "../src/test_toolchains.rs"]
+mod test_toolchains;
+
 fn compiler() -> Option<PathBuf> {
-    let path = std::env::var_os("SONAR_TEST_TYPESCRIPT")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(".sonar/typescript/oracle/node_modules/typescript")
-        });
-    if path.exists() {
-        Some(path)
-    } else {
-        eprintln!("Set SONAR_TEST_TYPESCRIPT to run compiler integration checks");
-        None
-    }
+    test_toolchains::typescript()
 }
 struct Fixture {
     _temp: tempfile::TempDir,

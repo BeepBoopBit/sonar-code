@@ -180,13 +180,13 @@ pub(super) fn run(
                 edges: vec![edge],
             });
         }
-        response.notices.push(Notice::new("semantic_coverage", if s.location(id)?.language.as_deref() == Some("typescript") {
+        response.notices.push(Notice::new("semantic_coverage", if s.location(id)?.language.as_deref() != Some("rust") {
             "Call/reference routes use the recorded compiler analysis profiles. Static connections do not prove execution order or runtime dispatch. Test-code endpoints can include helpers; they do not establish coverage of the requested behavior."
         } else {
             "Call/reference routes use the recorded Rust analysis profile. Static connections do not prove execution order or runtime dispatch. Test-code endpoints can include helpers; they do not establish coverage of the requested behavior."
         }));
-        if s.location(id)?.language.as_deref() == Some("typescript")
-            && let Some(notice) = crate::languages::typescript::semantic::coverage_notice(s.conn)?
+        if let Some(notice) =
+            crate::semantic::provider_notice(s.conn, s.location(id)?.language.as_deref())?
         {
             response.notices.push(notice);
         }

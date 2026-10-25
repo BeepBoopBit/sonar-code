@@ -34,11 +34,16 @@ Setup / refresh options:
   --db PATH         Database (default: <Sonar checkout>/.sonar/mcp/<name>.sqlite).
   --resolve         Also prepare Rust calls/references using rust-analyzer.
   --typescript PATH Also prepare TypeScript calls/references with this compiler module.
+  --go              Also prepare Go calls/references and field uses.
+  --go-command PATH Select the Go executable (requires --go).
+  --go-tags TAGS    Comma-separated Go build tags (requires --go).
+  --go-os OS        Go target operating system (requires --go).
+  --go-arch ARCH    Go target architecture (requires --go).
   --model PATH      Also embed with this local model; setup enables hybrid MCP.
   --resources MODE  Include 'none' (default) or 'yaml' optional resources.
   --replace         Setup only: replace an existing named Codex MCP entry.
 
-Repeat the same preparation options with refresh, including --model/--resolve/--typescript
+Repeat the same preparation options with refresh, including --model/--resolve/--typescript/--go
 and --resources when used. Options are not saved as a separate refresh profile.
 Relative repository, model, and --db paths are relative to your working directory.
 
@@ -58,6 +63,7 @@ Example:
 
 Setup requires Codex CLI; --resolve requires rust-analyzer and project dependencies.
 --typescript requires Node.js, a TypeScript 5.x/6.x compiler module, and project dependencies.
+--go requires a compatible local Go toolchain and cached project dependencies.
 Models must already exist locally. Restart Codex after setup or reinstall.
 Preparation reports are saved beside the database as <database>.<step>.json.
 EOF
@@ -147,7 +153,7 @@ doctor() {
         printf '%s\n' 'Python 3.8+: MISSING (needed for installer tests; set SONAR_PYTHON)'
         status=1
     fi
-    for executable in codex rust-analyzer node; do
+    for executable in codex rust-analyzer node go; do
         printf '%s (optional): %s\n' "$executable" "$(command -v "$executable" || printf 'not found')"
     done
     printf 'sonar on PATH: %s\n' "$(command -v sonar || printf 'not installed or not on PATH')"
@@ -249,13 +255,14 @@ prepare_step() {
 
 prepare_repository() {
     local action="$1" repository name='' db='' model='' typescript='' resolve=false resources=none replace=false
+    local go_analysis=false go_command='' go_tags='' go_os='' go_arch=''
     shift
     (($# > 0)) || fail "$action requires a repository path; see --help"
     repository="$1"
     shift
     while (($#)); do
         case "$1" in
-            --name|--db|--model|--resources|--typescript)
+            --name|--db|--model|--resources|--typescript|--go-command|--go-tags|--go-os|--go-arch)
                 (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail "$1 requires a value"
                 case "$1" in
                     --name) name="$2" ;;
@@ -263,16 +270,24 @@ prepare_repository() {
                     --model) model="$2" ;;
                     --resources) resources="$2" ;;
                     --typescript) typescript="$2" ;;
+                    --go-command) go_command="$2" ;;
+                    --go-tags) go_tags="$2" ;;
+                    --go-os) go_os="$2" ;;
+                    --go-arch) go_arch="$2" ;;
                 esac
                 shift 2
                 ;;
             --resolve) resolve=true; shift ;;
+            --go) go_analysis=true; shift ;;
             --replace) replace=true; shift ;;
             *) fail "unknown $action option: $1" ;;
         esac
     done
     [[ "$action" == setup || "$replace" == false ]] || fail '--replace only applies to setup'
     [[ "$resources" == none || "$resources" == yaml ]] || fail '--resources must be none or yaml'
+    if [[ "$go_analysis" == false && -n "$go_command$go_tags$go_os$go_arch" ]]; then
+        fail '--go-command, --go-tags, --go-os, and --go-arch require --go'
+    fi
     [[ -d "$repository" ]] || fail "repository directory does not exist: $repository"
     repository="$(CDPATH= cd -- "$repository" && pwd -P)"
     if [[ -z "$name" ]]; then
@@ -296,6 +311,11 @@ prepare_repository() {
         [[ -e "$typescript" ]] || fail "TypeScript compiler module does not exist: $typescript"
         [[ "$typescript" == /* ]] || typescript="$PWD/$typescript"
     fi
+    if [[ "$go_analysis" == true ]]; then
+        go_command="${go_command:-go}"
+        require_commands "$go_command"
+        if [[ "$go_command" == */* && "$go_command" != /* ]]; then go_command="$PWD/$go_command"; fi
+    fi
     if [[ "$action" == setup ]]; then
         require_commands codex
         # Validate Codex configuration before preparation; do not conflate a bad
@@ -316,6 +336,13 @@ prepare_repository() {
     if [[ -n "$typescript" ]]; then
         printf 'Running TypeScript resolution (report: %s.typescript-resolve.json)\n' "$db"
         "$SONAR_BINARY" --db "$db" resolve --typescript "$typescript" > "$db.typescript-resolve.json"
+    fi
+    if [[ "$go_analysis" == true ]]; then
+        local -a go_arguments=(--go --go-command "$go_command")
+        if [[ -n "$go_tags" ]]; then go_arguments+=(--go-tags "$go_tags"); fi
+        if [[ -n "$go_os" ]]; then go_arguments+=(--go-os "$go_os"); fi
+        if [[ -n "$go_arch" ]]; then go_arguments+=(--go-arch "$go_arch"); fi
+        "$SONAR_BINARY" --db "$db" resolve "${go_arguments[@]}" > "$db.go-resolve.json"
     fi
     if [[ -n "$model" ]]; then
         prepare_step "$db" embed --model "$model" --representation separate

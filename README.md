@@ -2,7 +2,10 @@
 
 Local code navigation for coding agents. Sonar finds relevant files, symbols, and line ranges, and returns them as JSON.
 
-Supports **Rust, Python, TypeScript/TSX, and Markdown**. Basic search runs locally without a model or API key.
+Supports **Rust, Python, TypeScript/TSX, Go, and Markdown**. Basic search runs locally without a model or API key.
+
+See the [0.1.2 release notes](CHANGELOG.md#012-unreleased) for Go support,
+upgrade instructions, and the early-stage Rust library API changes.
 
 ## Quick start
 
@@ -52,7 +55,8 @@ sonar investigate "How are requests routed?" --scope src --exclude src/generated
 For caller and reference navigation, use `sonar init --resolve` for Rust
 (requires rust-analyzer and local project dependencies), or
 `sonar init --typescript /path/to/node_modules/typescript` for TypeScript
-(requires Node.js and project dependencies). These options are saved for refreshes.
+(requires Node.js and project dependencies), or `sonar init --go` for Go
+(requires a compatible local Go toolchain and project dependencies). These options are saved for refreshes.
 For embedding search, `sonar init --model /path/to/model` saves an existing local
 model and prepares vectors; project searches then default to hybrid retrieval.
 

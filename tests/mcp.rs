@@ -10,6 +10,9 @@ use tokio::{
     time::timeout,
 };
 
+#[path = "../src/test_toolchains.rs"]
+mod test_toolchains;
+
 struct Fixture {
     _temp: tempfile::TempDir,
     root: PathBuf,
@@ -335,6 +338,224 @@ fn typescript_tsx_navigation_uses_the_existing_mcp_contract() {
             );
         }
         c.close().await;
+        assert_eq!(fs::read(&f.db).unwrap(), before);
+    });
+}
+
+#[test]
+fn go_navigation_and_capabilities_use_the_existing_mcp_contract() {
+    run(async {
+        let f = Fixture::new();
+        fs::write(f.root.join("store.go"), "package vault\ntype Store struct { Once bool }\nfunc (s *Store) Claim() bool {\n    return s.Once\n}\n").unwrap();
+        fs::write(
+            f.root.join("guide.md"),
+            "# Retrieval\n[Claim](store.go#L3)\n",
+        )
+        .unwrap();
+        sonar::index(&f.root, &f.db).unwrap();
+        sonar::index_navigation(&f.db).unwrap();
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, true).await;
+        let status = content(&client.call(1, "sonar_status", json!({})).await);
+        let go = status["index"]["languages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["language"] == "go")
+            .unwrap();
+        assert_eq!(go["syntax_freshness"], "current");
+        assert_eq!(go["semantic_freshness"], "unavailable");
+        assert_eq!(go["capabilities"]["syntax_focus"], true);
+        let brief = content(
+            &client
+                .call(2, "sonar_brief", json!({"query":"Store.Claim"}))
+                .await,
+        );
+        assert!(brief.to_string().contains("Store.Claim"));
+        let outline = content(
+            &client
+                .call(3, "sonar_outline", json!({"path":"store.go"}))
+                .await,
+        );
+        assert!(
+            outline["locations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["symbol"] == "Store.Once")
+        );
+        let located = content(
+            &client
+                .call(4, "sonar_locate", json!({"path":"store.go","line":4}))
+                .await,
+        );
+        assert_eq!(located["locations"][0]["symbol"], "Store.Claim");
+        assert_eq!(located["locations"][0]["language"], "go");
+        let handle = &located["locations"][0]["handle"];
+        let context = content(
+            &client
+                .call(
+                    5,
+                    "sonar_investigate",
+                    json!({"query":"claim","from":handle}),
+                )
+                .await,
+        );
+        assert!(
+            context["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["kind"] == "documents")
+        );
+        assert!(
+            context["notices"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|n| n["code"] == "graph_unavailable")
+        );
+        let neighbors = content(
+            &client
+                .call(6, "sonar_neighbors", json!({"handle":handle}))
+                .await,
+        );
+        assert!(
+            !neighbors["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["kind"] == "calls" || l["kind"] == "references")
+        );
+        client.close().await;
+        assert_eq!(fs::read(&f.db).unwrap(), before);
+    });
+}
+
+#[test]
+fn prepared_go_calls_and_field_uses_are_available_over_mcp() {
+    let Some(go) = test_toolchains::go() else {
+        return;
+    };
+    run(async {
+        let f = Fixture::new();
+        fs::write(
+            f.root.join("go.mod"),
+            "module example.test/mcp\n\ngo 1.26\n",
+        )
+        .unwrap();
+        fs::write(f.root.join("store.go"), "package vault\ntype Store struct { Once bool }\nfunc (s *Store) Claim() bool { return s.Once }\nfunc Execute() bool { s := &Store{true}; claim := s.Claim; return claim() }\ntype Claimer interface { Claim() bool }\nfunc Dynamic(value Claimer) bool { return value.Claim() }\n").unwrap();
+        sonar::index(&f.root, &f.db).unwrap();
+        sonar::resolve_go(
+            &f.db,
+            &sonar::GoOptions {
+                command: go,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let outline = sonar::outline(&f.db, "store.go", 100, None).unwrap();
+        let handle = |name| {
+            outline
+                .locations
+                .iter()
+                .find(|l| l.symbol.as_deref() == Some(name))
+                .unwrap()
+                .handle
+                .clone()
+        };
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, true).await;
+        let status = content(&client.call(1, "sonar_status", json!({})).await);
+        assert!(
+            status["index"]["languages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["language"] == "go" && l["semantic_freshness"] == "current")
+        );
+        let calls = content(
+            &client
+                .call(
+                    2,
+                    "sonar_neighbors",
+                    json!({"handle":handle("Execute"),"relation":"calls","direction":"outgoing"}),
+                )
+                .await,
+        );
+        assert!(
+            calls["locations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["symbol"] == "Store.Claim")
+        );
+        let uses = content(
+            &client
+                .call(
+                    3,
+                    "sonar_field_uses",
+                    json!({"handle":handle("Store.Once")}),
+                )
+                .await,
+        );
+        assert!(
+            uses["uses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["access"] == "read")
+        );
+        assert!(
+            uses["uses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|u| u["access"] == "initialize")
+        );
+        let implementations = content(
+            &client
+                .call(
+                    4,
+                    "sonar_neighbors",
+                    json!({
+                        "handle":handle("Claimer"), "relation":"implements", "direction":"incoming"
+                    }),
+                )
+                .await,
+        );
+        assert_eq!(implementations["locations"][0]["symbol"], "Store");
+        assert!(
+            implementations["links"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|l| l["kind"] == "implements")
+        );
+        let follow = content(&client.call(5, "sonar_follow", json!({
+            "handle":handle("Claimer.Claim"), "query":"Store", "relation":"implements", "direction":"incoming"
+        })).await);
+        assert!(
+            follow["locations"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|l| l["symbol"] == "Store.Claim"),
+            "{follow}"
+        );
+        let dynamic = content(
+            &client
+                .call(
+                    6,
+                    "sonar_neighbors",
+                    json!({
+                        "handle":handle("Dynamic"), "relation":"calls", "direction":"outgoing"
+                    }),
+                )
+                .await,
+        );
+        assert_eq!(dynamic["locations"][0]["symbol"], "Claimer.Claim");
+        client.close().await;
         assert_eq!(fs::read(&f.db).unwrap(), before);
     });
 }

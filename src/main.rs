@@ -15,7 +15,7 @@ use sonar::{BriefOptions, RetrievalMode, SearchEngine};
     name = "sonar",
     version,
     about = "Find relevant code in your repository locally",
-    long_about = "Find relevant code in your repository locally.\n\nReturn relevant files, symbols, and source line ranges as JSON.\nSupports Rust, Python, TypeScript/TSX, and Markdown.\nWorks from your terminal or through an AI agent using MCP.",
+    long_about = "Find relevant code in your repository locally.\n\nReturn relevant files, symbols, and source line ranges as JSON.\nSupports Rust, Python, TypeScript/TSX, Go, and Markdown.\nWorks from your terminal or through an AI agent using MCP.",
     after_help = cli_help::CLI
 )]
 struct Cli {
@@ -94,7 +94,7 @@ enum Command {
         #[arg(long)]
         cursor: Option<String>,
     },
-    /// Search around a known location through recorded calls and references.
+    /// Search around a known location through recorded compiler relationships.
     #[command(display_order = 7, after_help = cli_help::FOLLOW)]
     Follow {
         /// Full location handle from locate, outline, investigate, or brief --handles.
@@ -190,7 +190,7 @@ enum Command {
         #[arg(long)]
         scope: Option<String>,
     },
-    /// Prepare Rust or TypeScript compiler relationships for calls and references.
+    /// Prepare Rust, TypeScript, or Go compiler relationships for calls and references.
     #[command(display_order = 10, after_help = cli_help::RESOLVE)]
     Resolve {
         /// Rust analyzer executable; requires the repository's toolchain and dependencies.
@@ -200,8 +200,10 @@ enum Command {
         #[arg(long)]
         config: Option<PathBuf>,
         /// TypeScript compiler module directory/file; selects TypeScript analysis.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "go")]
         typescript: Option<PathBuf>,
+        #[command(flatten)]
+        go: GoArgs,
         /// Node.js executable used for TypeScript resolution.
         #[arg(long, default_value = "node")]
         node: PathBuf,
@@ -292,9 +294,52 @@ struct InitArgs {
     /// Also resolve TypeScript using this local compiler module.
     #[arg(long)]
     typescript: Option<PathBuf>,
+    #[command(flatten)]
+    go: GoArgs,
     /// Also prepare embeddings using this local model; no automatic downloads.
     #[arg(long)]
     model: Option<PathBuf>,
+}
+
+#[derive(Args)]
+struct GoArgs {
+    /// Resolve Go calls, references, and field uses with the local Go toolchain.
+    #[arg(long)]
+    go: bool,
+    /// Go executable [default: go on PATH].
+    #[arg(long, requires = "go")]
+    go_command: Option<PathBuf>,
+    /// Comma-separated Go build tags.
+    #[arg(long, value_delimiter = ',', requires = "go")]
+    go_tags: Option<Vec<String>>,
+    /// Go target operating system [default: the local Go configuration].
+    #[arg(long, requires = "go")]
+    go_os: Option<String>,
+    /// Go target architecture [default: the local Go configuration].
+    #[arg(long, requires = "go")]
+    go_arch: Option<String>,
+}
+impl GoArgs {
+    fn options(&self, previous: Option<&sonar::GoOptions>) -> Result<sonar::GoOptions> {
+        let mut options = previous.cloned().unwrap_or_default();
+        if let Some(command) = &self.go_command {
+            options.command = if command.components().count() > 1 {
+                std::path::absolute(command)?
+            } else {
+                command.clone()
+            };
+        }
+        if let Some(tags) = &self.go_tags {
+            options.tags = tags.clone();
+        }
+        if let Some(goos) = &self.go_os {
+            options.goos = Some(goos.clone());
+        }
+        if let Some(goarch) = &self.go_arch {
+            options.goarch = Some(goarch.clone());
+        }
+        Ok(options)
+    }
 }
 
 #[derive(Args)]
@@ -438,6 +483,9 @@ fn run() -> Result<()> {
         configuration.rust |= init.resolve;
         if let Some(compiler) = &init.typescript {
             configuration.typescript = Some(std::path::absolute(compiler)?);
+        }
+        if init.go.go {
+            configuration.go = Some(init.go.options(configuration.go.as_ref())?);
         }
         if let Some(model) = &init.model {
             configuration.model = Some(std::path::absolute(model)?);
@@ -584,8 +632,14 @@ fn run() -> Result<()> {
             typescript,
             node,
             project,
+            go,
         } => {
-            if let Some(compiler) = typescript {
+            if go.go {
+                serde_json::to_string_pretty(&sonar::resolve_go(
+                    &db,
+                    &go.options(configuration.go.as_ref())?,
+                )?)?
+            } else if let Some(compiler) = typescript {
                 serde_json::to_string_pretty(&sonar::resolve_typescript(
                     &db,
                     &node,

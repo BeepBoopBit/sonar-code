@@ -73,6 +73,7 @@ reports `unsupported index database`, select a fresh `--db` path and run init ag
 - Remove restrictive `--scope` or `--exclude` options and try a known symbol name.
 - If calls or references are missing, prepare resolution for that language.
   Python supports declarations and structural navigation, without resolved calls.
+  Go relationships need `sonar init --go` or `sonar resolve --go`.
 
 `sonar diagnose "your query"` exposes candidate and ranking details. Empty results
 can reflect retrieval or coverage limits.
@@ -92,6 +93,13 @@ Rust resolution runs Cargo locked and offline. Inspect `resolve.log` beside the
 database for analysis failures. TypeScript resolution needs Node.js, an installed
 TypeScript 5.x/6.x compiler module, and the target project's dependencies; pass the
 compiler path with `--typescript`.
+
+Go resolution needs a local toolchain compatible with the project and cached
+dependencies. Use `--go-command /path/to/go` if Go is not on `PATH`. Prepare missing
+dependencies through your Go workflow, then retry: Sonar resolves offline and does
+not download toolchains. Inspect the resolution report for package diagnostics
+and build-excluded files. Re-run resolution after changes to `go.mod`, `go.sum`,
+`go.work`, replaced dependencies, build settings, or the Go toolchain.
 
 For `index model does not match these assets`, incomplete embeddings, or embeddings
 that do not cover the current generation, rerun `sonar init` if its model is

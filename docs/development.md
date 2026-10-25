@@ -60,6 +60,7 @@ index for the existing connection. Cargo-installed users can instead follow
 | --- | --- |
 | `--resolve` | Prepare Rust relationships with rust-analyzer. |
 | `--typescript /path/to/node_modules/typescript` | Prepare TypeScript relationships with Node.js. |
+| `--go` | Prepare Go relationships with a local Go toolchain. |
 | `--model /path/to/model` | Prepare embeddings and configure hybrid MCP search. |
 | `--resources yaml` | Include bounded YAML resources. |
 | `--db /path/to/project.sqlite` | Override the database location. |
@@ -96,11 +97,41 @@ failures, argument handling, working directories, and MCP registration behavior.
 Model download tests use fixture assets and a mocked network to check sharing
 across repositories, reuse, repair, and custom paths without fetching models.
 
+Compiler integration tests use local fixture projects. Go analysis and Rust
+analysis run offline; TypeScript resolution uses a locally installed compiler.
+The main Go fixtures need Go 1.26+, while `--test go_minimum` uses a Go 1.18 module
+to check the analyzer's documented minimum. Rust's real exporter test needs
+`rust-analyzer` and `rust-src` from the active Rust toolchain:
+
+```sh
+rustup component add rust-analyzer rust-src
+SONAR_REQUIRE_COMPILERS=1 \
+  SONAR_TEST_GO=/absolute/path/to/go \
+  SONAR_TEST_TYPESCRIPT=/absolute/path/to/node_modules/typescript \
+  ./dev.sh test
+```
+
+Compiler tests skip locally when optional tools are unavailable. Setting
+`SONAR_REQUIRE_COMPILERS=1` makes missing tools fail the tests. An explicitly set
+compiler path that is unavailable also fails, even without strict mode.
+
+The [CI workflow](../.github/workflows/ci.yml) runs on branch pushes and pull
+requests. Both TypeScript 5.9.3 and 6.0.3 run the full suite, including Rust,
+Python, TypeScript/TSX, Go, Markdown/YAML, CLI, MCP, and Python helper tests.
+CI installs Node.js 24, Go 1.27.3, and Rust's analyzer/source components and
+requires every compiler integration. It also checks Go 1.18.10 analysis using
+`go_minimum`, Rust 1.88 compilation, formatting, Clippy, and Cargo packaging.
+The release workflow reuses these checks before publishing.
+
 | Environment variable | Purpose |
 | --- | --- |
 | `SONAR_DEV_INSTALL_DIR` | Install directory; defaults to `$CARGO_HOME/bin` or `~/.cargo/bin`. |
 | `CARGO_TARGET_DIR` | Build directory; defaults to this checkout's `target/`. |
 | `SONAR_PYTHON` | Python executable for installer tests; otherwise tries `python3`, then `python`. |
+| `SONAR_REQUIRE_COMPILERS` | Set to `1` to fail when a compiler integration cannot run. |
+| `SONAR_TEST_GO` | Go executable for integration tests; otherwise uses `go` on `PATH`. |
+| `SONAR_TEST_TYPESCRIPT` | TypeScript package directory; otherwise uses the local `.sonar/typescript/oracle/node_modules/typescript` fixture installation. |
+| `SONAR_TEST_RUST_ANALYZER` | Analyzer executable; otherwise uses `rust-analyzer` on `PATH`. |
 
 The install and build directory overrides must be absolute paths. Keep `Cargo.lock`
 committed; builds and Cargo tests use `--locked`.
@@ -112,7 +143,7 @@ committed; builds and Cargo tests use `--locked`.
 | `src/main.rs`, `src/cli_help.rs` | CLI commands, arguments, and usage examples. |
 | `src/onboarding.rs`, `src/project.rs` | Saved preparation settings, initialization, safe client configuration, and managed instructions. |
 | `src/lib.rs`, `src/` | Index storage, retrieval, ranking, and navigation. |
-| `src/languages/` | Rust, Python, and TypeScript adapters and compiler integration. |
+| `src/languages/` | Rust, Python, TypeScript, and Go adapters and compiler integration. |
 | `src/mcp.rs`, `src/mcp/` | MCP tool definitions and runtime. |
 | `tests/` | Rust integration tests; additional unit tests live beside source code. |
 | `scripts/` | Model downloads, embedding verification, and helper tests. |

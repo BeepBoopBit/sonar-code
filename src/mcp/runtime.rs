@@ -316,13 +316,7 @@ impl Runtime {
         if let Some(error) = &self.model_error {
             notices.push(crate::Notice::new("configured_model_unavailable", error));
         }
-        if languages
-            .iter()
-            .any(|l| l.language == "typescript" && l.semantic_freshness == "current")
-            && let Some(notice) = crate::languages::typescript::semantic::coverage_notice(&tx)?
-        {
-            notices.push(notice);
-        }
+        notices.extend(crate::semantic::coverage_notices(&tx, &languages)?);
         if !fresh {
             notices.push(crate::Notice::new("stale_index", "Run `sonar index <repository>` with the same indexing options. Changed/deleted files are omitted by briefs; explicit navigation requires a current snapshot."));
         }
