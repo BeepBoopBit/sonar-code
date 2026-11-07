@@ -369,6 +369,11 @@ pub fn resolve(
             ],
         )?;
     }
+    let baseline_node = if node.components().count() > 1 {
+        std::path::absolute(node)?
+    } else {
+        node.to_owned()
+    };
     for (key, value) in [
         ("typescript_semantic_profile", profile.clone()),
         ("typescript_semantic_snapshot", snapshot.clone()),
@@ -378,6 +383,12 @@ pub fn resolve(
             serde_json::to_string(&export.inputs)?,
         ),
         ("typescript_semantic_manifest", manifest),
+        (
+            "typescript_baseline_resolver",
+            serde_json::to_string(
+                &serde_json::json!({"node":baseline_node,"compiler":compiler,"project":project}),
+            )?,
+        ),
     ] {
         tx.execute(
             "INSERT OR REPLACE INTO metadata VALUES (?1,?2)",

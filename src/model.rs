@@ -184,7 +184,7 @@ pub struct Evidence {
     pub line: usize,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexState {
     pub snapshot: String,
     pub semantic_profile: Option<String>,

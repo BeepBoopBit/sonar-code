@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/icon.png" alt="Sonar icon" width="160" height="160">
+</p>
+
 # Sonar
 
 Local code navigation for coding agents. Sonar finds relevant files, symbols, and line ranges, and returns them as JSON.
@@ -111,6 +115,8 @@ Shared model downloads live in your home directory.
 - [Agent setup](docs/agents.md) — install with an agent and guide its use of Sonar.
 - [MCP setup](docs/mcp.md) — connect agents and refresh their indexes.
 - [Troubleshooting](docs/troubleshooting.md) — common errors and recovery steps.
+- [Dependency analysis](docs/analysis.md) — file connections, review clusters, bounded review packs, baseline-aware impact, and coverage gaps.
+- [Review evaluation](docs/review-evaluation.md) — known-bug fixtures, context comparisons, and grounded finding scores.
 - [Development](docs/development.md) — helper commands, tests, and project layout.
 - [Releasing](docs/releasing.md) — package checks and crates.io publication.
 

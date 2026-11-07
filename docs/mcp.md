@@ -166,6 +166,9 @@ registration and restart the server.
 | `sonar_brief`, `sonar_investigate` | Discover starting points and inspect a selected lead. |
 | `sonar_locate`, `sonar_outline` | Find declarations by source position or file. |
 | `sonar_neighbors`, `sonar_follow`, `sonar_field_uses` | Inspect recorded relationships and their source evidence. |
+| `sonar_review_context`, `sonar_review_areas` | Build bounded static review units and reading paths, or propose repository areas with assignment coverage. See [review clusters](analysis.md#review-clusters). |
+| `sonar_impact` | Inspect a base-to-working-tree diff, before/after declarations, optional old/current consumers, bounded review clusters, and explicit analysis gaps. See [change-driven review](analysis.md#change-driven-review). |
+| `sonar_dependencies` | Explain file dependencies or incoming dependents, with bounded paths and analysis gaps. See [dependency analysis](analysis.md). |
 
 Start with `sonar_status`, call `sonar_init` if needed, then search with
 `sonar_investigate` or `sonar_brief`. Read the returned source ranges using the

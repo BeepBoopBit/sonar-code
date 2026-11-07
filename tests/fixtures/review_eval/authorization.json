@@ -1,0 +1,18 @@
+{
+  "id": "authorization",
+  "baseline": {
+    "policy.py": "# Every required role is mandatory for an account export.\nREQUIRED_ROLES = ('reader', 'exporter')\n",
+    "access.py": "from policy import REQUIRED_ROLES\n\ndef can_export(roles):\n    return all(role in roles for role in REQUIRED_ROLES)\n"
+  },
+  "buggy": {
+    "policy.py": "# Every required role is mandatory for an account export.\nREQUIRED_ROLES = ('reader', 'exporter')\n",
+    "access.py": "from policy import REQUIRED_ROLES\n\ndef can_export(roles):\n    return any(role in roles for role in REQUIRED_ROLES)\n"
+  },
+  "control": {
+    "policy.py": "# Every required role is mandatory for an account export.\nREQUIRED_ROLES = ('reader', 'exporter')\n",
+    "access.py": "from policy import REQUIRED_ROLES\n\ndef can_export(roles):\n    return set(REQUIRED_ROLES).issubset(set(roles))\n"
+  },
+  "oracle": "from access import can_export\nassert can_export({'reader'}) is False\nassert can_export({'exporter'}) is False\nassert can_export({'reader', 'exporter'}) is True\nassert can_export(set()) is False\n",
+  "issue": {"id": "partial-role-access", "description": "A caller with only one mandatory role can export accounts.", "path": "access.py", "needle": "return any(role in roles for role in REQUIRED_ROLES)"},
+  "required_context": [{"path": "policy.py", "needle": "# Every required role is mandatory for an account export.\nREQUIRED_ROLES = ('reader', 'exporter')"}]
+}

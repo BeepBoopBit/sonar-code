@@ -14,7 +14,7 @@ mod runtime;
 
 use runtime::{Operation, Worker};
 
-const INSTRUCTIONS: &str = "Check sonar_status first. If initialized=false, call sonar_init to explicitly prepare this server's bound repository. Search/navigation require initialization. The init tool writes local project state and ignore rules; query tools only read. Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust, TypeScript/TSX, and Go support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Empty results never establish feature absence. Paths are relative to the root reported by status. Use sonar_init to refresh saved preparation settings, or use explicit local CLI indexing, embedding, and resolution operations. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
+const INSTRUCTIONS: &str = "Check sonar_status first. If initialized=false, call sonar_init to explicitly prepare this server's bound repository. Search/navigation require initialization. The init tool writes local project state and ignore rules; query tools only read. Sonar navigates the one repository bound to this server's index. Start with sonar_status for its root, freshness and index.languages capabilities (Rust, TypeScript/TSX, and Go support compiler-resolved calls, references and field uses after explicit resolution; Python supports structural navigation; contextual facts currently require Rust), sonar_brief for compact entry points, or sonar_investigate for separate function/documentation leads. Read the returned source ranges using your file tools; Sonar complements grep and does not answer behavior questions for you. Pass a location's full handle (not s1/n1 response IDs) to investigate.from, neighbors, follow, or field_uses. Source roles, routes and overlap are evidence to inspect, not execution-flow, test-coverage or confidence guarantees. Use sonar_dependencies for file connections, reverse dependents, unresolved imports and analysis coverage. Use sonar_review_context for a bounded selected-file/symbol review unit and sonar_review_areas for repository review units and assignment coverage; these are static heuristics, not defect reports. Empty results never establish feature absence. Use sonar_impact to inspect changes against a Git base and the current indexed working tree; baseline syntax maps deletions, while missing compiler evidence and uncertain identity remain explicit. Paths are relative to the root reported by status. Use sonar_init to refresh saved preparation settings, or use explicit local CLI indexing, embedding, and resolution operations. The optional configured model is reused across calls. Current snapshots are required for handle navigation. Follow and neighbors have their own scope; field_uses scope restricts use sites, not referenced declarations. Cancellation skips queued work; an active synchronous read can finish internally without sending its cancelled result.";
 
 #[derive(Clone)]
 struct SonarServer {
@@ -139,6 +139,67 @@ impl SonarServer {
     )]
     async fn sonar_follow(&self, Parameters(p): Parameters<params::Follow>) -> CallToolResult {
         self.worker.call(Operation::Follow(p)).await
+    }
+
+    #[tool(
+        description = "Explain file dependencies or reverse dependents grouped by file pair, with counts and up to three evidence examples per kind. Continue next_cursor with the same path, direction, depth and limit to retrieve remaining groups and auxiliary records. Includes bounded traversal, unresolved syntax records and coverage gaps. Rust syntax module links and current compiler calls/references are supported. This is not runtime flow or complete impact analysis. Default direction is outgoing; incoming finds dependents.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn sonar_dependencies(
+        &self,
+        Parameters(p): Parameters<params::Dependencies>,
+    ) -> CallToolResult {
+        self.worker.call(Operation::Dependencies(p)).await
+    }
+
+    #[tool(
+        description = "Build a bounded static review cluster around an indexed file, unambiguous exact symbol, or full handle. Returns evidence-backed reading steps, source ranges, related test relationships, and omitted boundary connections. max_files is a hard selected-file budget. Reading paths are not execution traces or defect findings.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn sonar_review_context(
+        &self,
+        Parameters(p): Parameters<params::ReviewContext>,
+    ) -> CallToolResult {
+        self.worker.call(Operation::ReviewContext(p)).await
+    }
+
+    #[tool(
+        description = "Propose deterministic, bounded repository review areas. Selected primary files are disjoint; high-degree shared infrastructure is boundary context. Reports assigned/shared/unassigned code-file coverage and paginates areas and coverage records. Continue next_cursor with the same max_files, scope, and limit. Areas are static heuristics, not risk rankings or confirmed feature boundaries.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn sonar_review_areas(
+        &self,
+        Parameters(p): Parameters<params::ReviewAreas>,
+    ) -> CallToolResult {
+        self.worker.call(Operation::ReviewAreas(p)).await
+    }
+
+    #[tool(
+        description = "Compare a Git base commit (default HEAD) with the current indexed working tree, including untracked files. Analyzes baseline syntax in an isolated temporary snapshot, maps deleted/current declarations, reports textual signature changes and uncertain rename/move candidates, and returns bounded current/baseline review clusters. Set baseline_resolve=true to explicitly attempt baseline compiler consumers using local resolver settings. Missing analysis and detail caps are explicit. Requires an index at the Git root. This is not semantic equivalence or a regression finding. Continue next_cursor using identical options.",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn sonar_impact(&self, Parameters(p): Parameters<params::Impact>) -> CallToolResult {
+        self.worker.call(Operation::Impact(p)).await
     }
 
     #[tool(

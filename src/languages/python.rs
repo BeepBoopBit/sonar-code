@@ -1,13 +1,18 @@
-//! Python structural navigation. No imports or calls are guessed from names.
+//! Python structural navigation and conservative local module-layout dependencies.
 use super::{LanguageAdapter, LanguageCapabilities};
 use crate::extract::{ParsedFile, ParsedLocation, regions};
 use anyhow::Result;
 use tree_sitter::Node;
 
+mod dependencies;
+
 pub(crate) struct Python;
 impl LanguageAdapter for Python {
     fn id(&self) -> &'static str {
         "python"
+    }
+    fn dependency_provider(&self) -> Option<&dyn crate::analysis::provider::AnalysisProvider> {
+        Some(&dependencies::PythonDependencies)
     }
     fn extensions(&self) -> &'static [&'static str] {
         &["py", "pyi"]

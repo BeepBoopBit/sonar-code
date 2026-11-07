@@ -606,7 +606,7 @@ fn legacy_stdio_exposes_read_only_schemas_and_matches_navigation_api() {
         let mut c = Client::start(&f, false).await;
         let list = c.request(1, "tools/list", json!({})).await;
         let tools = list["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 13);
         for tool in tools {
             assert_eq!(tool["inputSchema"]["type"], "object");
             assert_eq!(tool["inputSchema"]["additionalProperties"], false);
@@ -769,7 +769,7 @@ fn modern_stdio_supports_discovery_pagination_and_recovery_after_invalid_calls()
             );
         }
         let list = c.request(11, "tools/list", json!({})).await;
-        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 9);
+        assert_eq!(list["result"]["tools"].as_array().unwrap().len(), 13);
         assert_eq!(
             content(&c.call(12, "sonar_status", json!({})).await)["index"]["syntax_freshness"],
             "current"
@@ -857,7 +857,7 @@ fn protocol_remains_responsive_under_backpressure_and_cancelled_work_has_no_repl
             let id = response["id"].as_u64().unwrap();
             assert_ne!(id, 1, "cancelled request received a reply");
             if id == 99 {
-                assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 9);
+                assert_eq!(response["result"]["tools"].as_array().unwrap().len(), 13);
                 break;
             }
             assert_eq!(
@@ -957,7 +957,7 @@ fn official_sdk_client_can_discover_and_call_the_stdio_server() {
         command.arg("--db").arg(&f.db).arg("mcp");
         let client = ().serve(TokioChildProcess::new(command).unwrap()).await.unwrap();
         let tools = client.list_tools(None).await.unwrap();
-        assert_eq!(tools.tools.len(), 9);
+        assert_eq!(tools.tools.len(), 13);
         let result = client
             .call_tool(
                 CallToolRequestParams::new("sonar_brief")
@@ -1008,5 +1008,258 @@ fn missing_index_can_be_initialized_through_mcp_without_changing_its_bound_root(
         );
         assert!(!search["files"].as_array().unwrap().is_empty());
         client.close().await;
+    });
+}
+
+#[test]
+fn dependency_tool_matches_shared_api_and_rejects_invalid_limits() {
+    run(async {
+        let f = Fixture::new();
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, false).await;
+        let actual = content(
+            &client
+                .call(20, "sonar_dependencies", json!({"path":"lib.rs"}))
+                .await,
+        );
+        let expected = sonar::analysis::dependencies(&f.db, "lib.rs", &Default::default()).unwrap();
+        assert_eq!(actual, serde_json::to_value(expected).unwrap());
+        let bad = client
+            .call(21, "sonar_dependencies", json!({"path":"lib.rs","depth":0}))
+            .await;
+        assert_eq!(bad["result"]["isError"], true);
+        client.close().await;
+        assert_eq!(fs::read(&f.db).unwrap(), before);
+    });
+}
+
+#[test]
+fn dependency_tool_paginates_and_rejects_changed_query_cursors() {
+    run(async {
+        let f = Fixture::new();
+        fs::write(f.root.join("lib.rs"), "mod a; mod b;").unwrap();
+        fs::write(f.root.join("a.rs"), "").unwrap();
+        fs::write(f.root.join("b.rs"), "").unwrap();
+        sonar::index(&f.root, &f.db).unwrap();
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, false).await;
+        let first = content(
+            &client
+                .call(30, "sonar_dependencies", json!({"path":"lib.rs","limit":1}))
+                .await,
+        );
+        let cursor = first["next_cursor"].as_str().unwrap();
+        let second = content(
+            &client
+                .call(
+                    31,
+                    "sonar_dependencies",
+                    json!({"path":"lib.rs","limit":1,"cursor":cursor}),
+                )
+                .await,
+        );
+        let expected = sonar::analysis::dependencies(
+            &f.db,
+            "lib.rs",
+            &sonar::analysis::DependencyOptions {
+                limit: 1,
+                cursor: Some(cursor.into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(second, serde_json::to_value(expected).unwrap());
+        assert_eq!(second["next_cursor"], Value::Null);
+        assert_ne!(
+            first["relationships"][0]["to"],
+            second["relationships"][0]["to"]
+        );
+        let bad = client
+            .call(
+                32,
+                "sonar_dependencies",
+                json!({"path":"lib.rs","limit":2,"cursor":cursor}),
+            )
+            .await;
+        assert_eq!(bad["result"]["isError"], true);
+        client.close().await;
+        assert_eq!(fs::read(&f.db).unwrap(), before);
+    });
+}
+
+#[test]
+fn review_tools_match_api_and_preserve_file_budgets_and_cursors() {
+    run(async {
+        let f = Fixture::new();
+        fs::write(f.root.join("lib.rs"), "mod a; mod b;").unwrap();
+        fs::write(f.root.join("a.rs"), "fn first() {}\n").unwrap();
+        fs::write(f.root.join("b.rs"), "fn second() {}\n").unwrap();
+        sonar::index(&f.root, &f.db).unwrap();
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, false).await;
+        let context = content(
+            &client
+                .call(
+                    40,
+                    "sonar_review_context",
+                    json!({"seed":"lib.rs","max_files":2}),
+                )
+                .await,
+        );
+        let expected = sonar::analysis::review_context(
+            &f.db,
+            "lib.rs",
+            &sonar::analysis::ReviewContextOptions {
+                max_files: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(context, serde_json::to_value(expected).unwrap());
+        let first = content(
+            &client
+                .call(41, "sonar_review_areas", json!({"max_files":1,"limit":1}))
+                .await,
+        );
+        assert_eq!(first["areas"][0]["files"].as_array().unwrap().len(), 1);
+        let cursor = first["next_cursor"].as_str().unwrap();
+        let second = content(
+            &client
+                .call(
+                    42,
+                    "sonar_review_areas",
+                    json!({"max_files":1,"limit":1,"cursor":cursor}),
+                )
+                .await,
+        );
+        let expected = sonar::analysis::review_areas(
+            &f.db,
+            &sonar::analysis::ReviewAreasOptions {
+                max_files: 1,
+                limit: 1,
+                cursor: Some(cursor.into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(second, serde_json::to_value(expected).unwrap());
+        let bad = client
+            .call(
+                43,
+                "sonar_review_areas",
+                json!({"max_files":2,"limit":1,"cursor":cursor}),
+            )
+            .await;
+        assert_eq!(bad["result"]["isError"], true);
+        let bad = client
+            .call(
+                44,
+                "sonar_review_context",
+                json!({"seed":"lib.rs","max_files":0}),
+            )
+            .await;
+        assert_eq!(bad["result"]["isError"], true);
+        client.close().await;
+        assert_eq!(fs::read(&f.db).unwrap(), before);
+    });
+}
+
+#[test]
+fn impact_tool_matches_api_and_binds_its_continuation() {
+    run(async {
+        let f = Fixture::new();
+        for args in [
+            vec!["init", "-q"],
+            vec!["add", "lib.rs", "guide.md"],
+            vec![
+                "-c",
+                "user.name=Sonar Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "-c",
+                "commit.gpgsign=false",
+                "-c",
+                "core.hooksPath=/dev/null",
+                "commit",
+                "-qm",
+                "base",
+            ],
+        ] {
+            assert!(
+                std::process::Command::new("git")
+                    .arg("-C")
+                    .arg(&f.root)
+                    .args(args)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+        fs::write(f.root.join("lib.rs"),"struct Settings { count: usize }\nfn policy() { helper(); helper(); }\nfn helper() {}\n").unwrap();
+        fs::write(f.root.join("guide.md"), "# Changed\n").unwrap();
+        sonar::index(&f.root, &f.db).unwrap();
+        let before = fs::read(&f.db).unwrap();
+        let mut client = Client::start(&f, false).await;
+        let first = content(
+            &client
+                .call(
+                    50,
+                    "sonar_impact",
+                    json!({"base":"HEAD","limit":1,"max_files":2}),
+                )
+                .await,
+        );
+        let expected = sonar::analysis::impact(
+            &f.db,
+            &sonar::analysis::ImpactOptions {
+                limit: 1,
+                max_files: 2,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(first, serde_json::to_value(expected).unwrap());
+        let cursor = first["next_cursor"].as_str().unwrap();
+        let second = content(
+            &client
+                .call(
+                    51,
+                    "sonar_impact",
+                    json!({"base":"HEAD","limit":1,"max_files":2,"cursor":cursor}),
+                )
+                .await,
+        );
+        let expected = sonar::analysis::impact(
+            &f.db,
+            &sonar::analysis::ImpactOptions {
+                limit: 1,
+                max_files: 2,
+                cursor: Some(cursor.into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(second, serde_json::to_value(expected).unwrap());
+        let bad = client
+            .call(
+                52,
+                "sonar_impact",
+                json!({"base":"HEAD","limit":1,"max_files":3,"cursor":cursor}),
+            )
+            .await;
+        assert_eq!(bad["result"]["isError"], true);
+        let baseline = content(
+            &client
+                .call(
+                    53,
+                    "sonar_impact",
+                    json!({"base":"HEAD","baseline_resolve":true,"limit":1}),
+                )
+                .await,
+        );
+        assert_eq!(baseline["baseline_analysis"], true);
+        assert_eq!(baseline["baseline"]["compiler_requested"], true);
+        client.close().await;
+        assert_eq!(before, fs::read(&f.db).unwrap());
     });
 }

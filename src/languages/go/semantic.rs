@@ -539,6 +539,10 @@ pub fn resolve(db: &Path, options: &GoOptions) -> Result<GoReport> {
         ("go_semantic_snapshot", snapshot.clone()),
         ("go_semantic_policy", POLICY.into()),
         ("go_semantic_manifest", manifest.clone()),
+        (
+            "go_baseline_command",
+            command.to_string_lossy().into_owned(),
+        ),
     ] {
         tx.execute(
             "INSERT OR REPLACE INTO metadata VALUES (?1,?2)",

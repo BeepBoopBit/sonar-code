@@ -199,3 +199,69 @@ pub(super) struct FieldUses {
     #[schemars(length(max = 128))]
     pub cursor: Option<String>,
 }
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Dependencies {
+    /// Repository-relative indexed file path.
+    pub path: String,
+    /// Outgoing dependencies, incoming dependents, or both; default outgoing.
+    pub direction: Option<Direction>,
+    /// Maximum file-to-file hops: 1–4, default 1.
+    #[schemars(range(min = 1, max = 4))]
+    pub depth: Option<usize>,
+    /// File-pair groups per page: 1–1000, default 100; also bounds auxiliary streams.
+    #[schemars(range(min = 1, max = 1000))]
+    pub limit: Option<usize>,
+    /// next_cursor from the same path, direction, depth, and limit query.
+    #[schemars(length(max = 128))]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReviewContext {
+    /// Indexed file path, unambiguous exact symbol, or full snapshot-bound handle.
+    #[schemars(length(min = 1, max = 16384))]
+    pub seed: String,
+    /// Hard selected-file budget: 1–50, default 12. Boundary references are separate.
+    #[schemars(range(min = 1, max = 50))]
+    pub max_files: Option<usize>,
+    /// Literal repository-relative file or directory for selected files.
+    pub scope: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct ReviewAreas {
+    /// Hard file budget for each area: 1–50, default 12.
+    #[schemars(range(min = 1, max = 50))]
+    pub max_files: Option<usize>,
+    pub scope: Option<String>,
+    /// Areas and auxiliary coverage records per page: 1–20, default 5.
+    #[schemars(range(min = 1, max = 20))]
+    pub limit: Option<usize>,
+    /// Continue the same max_files, scope, and limit query.
+    #[schemars(length(max = 128))]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(super) struct Impact {
+    /// Git revision compared with the current working tree; default HEAD.
+    #[schemars(length(min = 1, max = 1024))]
+    pub base: Option<String>,
+    /// Explicitly run baseline compiler preparation in temporary storage; default false.
+    pub baseline_resolve: Option<bool>,
+    /// Hard selected-file budget per change: 1–50, default 12.
+    #[schemars(range(min = 1, max = 50))]
+    pub max_files: Option<usize>,
+    pub scope: Option<String>,
+    /// Changes per page: 1–20, default 5.
+    #[schemars(range(min = 1, max = 20))]
+    pub limit: Option<usize>,
+    /// Continue the same base, max_files, scope, and limit query.
+    #[schemars(length(max = 128))]
+    pub cursor: Option<String>,
+}

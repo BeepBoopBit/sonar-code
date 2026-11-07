@@ -67,7 +67,7 @@ Response IDs such as `s1` are not handles. Obtain fresh handles after reindexing
 | Files | Support |
 | --- | --- |
 | Rust `.rs` | Search and declarations; compiler relationships after `resolve`. |
-| Python `.py`, `.pyi` | Search and declarations; resolved calls and field uses are unavailable. |
+| Python `.py`, `.pyi` | Search, declarations, and conservative local import dependencies; resolved calls and field uses are unavailable. |
 | TypeScript `.ts`, `.tsx`, `.mts`, `.cts`, including declarations | Search and declarations; compiler relationships after TypeScript resolution. |
 | Go `.go`, including `_test.go` | Search and declarations; compiler relationships and field uses after Go resolution. |
 | Markdown `.md` | Searchable document sections. |

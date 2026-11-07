@@ -46,11 +46,11 @@ models, evaluation data, and build output. The dry run packages and builds the s
 without uploading it.
 
 Test installation from that extracted package into a temporary directory.
-Replace `0.1.2` below with the version being released:
+Replace `0.2.0` below with the version being released:
 
 ```sh
 install_root="$(mktemp -d)"
-cargo install --path target/package/sonar-code-0.1.2 --locked --root "$install_root"
+cargo install --path target/package/sonar-code-0.2.0 --locked --root "$install_root"
 "$install_root/bin/sonar" --version
 "$install_root/bin/sonar" --help
 "$install_root/bin/sonar" init --help
@@ -67,14 +67,14 @@ verify `sonar status` and a search using the [agent setup workflow](agents.md).
 Update `Cargo.toml` and `Cargo.lock`, then commit and push the release files.
 Include the accepted API changes and upgrade instructions from the
 [release notes](../CHANGELOG.md) in the release commit and published description.
-The `0.1.2` release intentionally includes early-stage Rust library API changes.
+The `0.2.0` release intentionally includes early-stage Rust library API changes.
 
-Push a tag matching the new version; for example, after setting version `0.1.2`:
+Push a tag matching the new version; for example, after setting version `0.2.0`:
 
 ```sh
 git push origin main
-git tag -a v0.1.2 -m "Release 0.1.2"
-git push origin v0.1.2
+git tag -a v0.2.0 -m "Release 0.2.0"
+git push origin v0.2.0
 ```
 
 The workflow checks the tag and reuses CI for formatting, Clippy, all language and

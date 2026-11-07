@@ -177,6 +177,90 @@ enum Command {
         #[arg(long)]
         cursor: Option<String>,
     },
+    /// Explain outgoing file dependencies with source evidence and analysis gaps.
+    Dependencies {
+        path: String,
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        /// Continue the same path, depth, and limit using next_cursor.
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Explain incoming file dependencies with source evidence and analysis gaps.
+    Dependents {
+        path: String,
+        #[arg(long, default_value_t = 1)]
+        depth: usize,
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+        /// Continue the same path, depth, and limit using next_cursor.
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Build a bounded review unit around an indexed file, exact symbol, or full handle.
+    ReviewContext {
+        seed: String,
+        #[arg(long, default_value_t = 12)]
+        max_files: usize,
+        #[arg(long)]
+        scope: Option<String>,
+    },
+    /// Propose bounded review areas with complete code-file assignment accounting.
+    ReviewAreas {
+        #[arg(long, default_value_t = 12)]
+        max_files: usize,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Build change-driven review context against a Git base commit and the current worktree.
+    Impact {
+        #[arg(long, default_value = "HEAD")]
+        base: String,
+        /// Attempt compiler-backed old consumers in an isolated baseline checkout.
+        #[arg(long)]
+        baseline_resolve: bool,
+        #[arg(long, default_value_t = 12)]
+        max_files: usize,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Export bounded source and evidence packs for audit areas or changes.
+    ReviewPack {
+        /// Focus an audit pack on a file, exact symbol, or navigation handle.
+        #[arg(long, conflicts_with = "base")]
+        seed: Option<String>,
+        /// Select change review against this Git base; omission selects audit areas.
+        #[arg(long)]
+        base: Option<String>,
+        #[arg(long, requires = "base")]
+        baseline_resolve: bool,
+        #[arg(long, default_value_t = 12)]
+        max_files: usize,
+        /// Per-pack compact JSON byte budget, used as conservative token units.
+        #[arg(long, default_value_t = 16000)]
+        max_tokens: usize,
+        #[arg(long)]
+        scope: Option<String>,
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
+        #[arg(long)]
+        cursor: Option<String>,
+    },
+    /// Inspect or prune the shared baseline cache without modifying a project.
+    BaselineCache {
+        #[command(subcommand)]
+        action: BaselineCacheCommand,
+    },
     /// Prepare optional document/resource links and module navigation.
     #[command(display_order = 11, after_help = cli_help::INDEX_NAVIGATION)]
     IndexNavigation,
@@ -465,6 +549,22 @@ impl QueryArgs {
     }
 }
 
+#[derive(Subcommand)]
+enum BaselineCacheCommand {
+    /// List completed/incomplete baseline entries and configured storage limits.
+    List,
+    /// Evict least-recently-used entries; active entries are protected.
+    Prune {
+        /// Remove all idle entries instead of only entries exceeding the limits.
+        #[arg(long)]
+        all: bool,
+        #[arg(long)]
+        max_bytes: Option<u64>,
+        #[arg(long)]
+        max_entries: Option<usize>,
+    },
+}
+
 fn run() -> Result<()> {
     let cli = Cli::parse();
     let root = match &cli.command {
@@ -499,10 +599,118 @@ fn run() -> Result<()> {
             | Command::Mcp { .. }
             | Command::Index { .. }
             | Command::Status
+            | Command::BaselineCache { .. }
     ) {
         onboarding::require_initialized(&db)?;
     }
     let output = match cli.command {
+        Command::Dependencies {
+            path,
+            depth,
+            limit,
+            cursor,
+        } => serde_json::to_string_pretty(&sonar::analysis::dependencies(
+            &db,
+            &path,
+            &sonar::analysis::DependencyOptions {
+                direction: sonar::Direction::Outgoing,
+                depth,
+                limit,
+                cursor,
+            },
+        )?)?,
+        Command::Dependents {
+            path,
+            depth,
+            limit,
+            cursor,
+        } => serde_json::to_string_pretty(&sonar::analysis::dependencies(
+            &db,
+            &path,
+            &sonar::analysis::DependencyOptions {
+                direction: sonar::Direction::Incoming,
+                depth,
+                limit,
+                cursor,
+            },
+        )?)?,
+        Command::ReviewContext {
+            seed,
+            max_files,
+            scope,
+        } => serde_json::to_string_pretty(&sonar::analysis::review_context(
+            &db,
+            &seed,
+            &sonar::analysis::ReviewContextOptions { max_files, scope },
+        )?)?,
+        Command::ReviewAreas {
+            max_files,
+            scope,
+            limit,
+            cursor,
+        } => serde_json::to_string_pretty(&sonar::analysis::review_areas(
+            &db,
+            &sonar::analysis::ReviewAreasOptions {
+                max_files,
+                scope,
+                limit,
+                cursor,
+            },
+        )?)?,
+        Command::Impact {
+            base,
+            baseline_resolve,
+            max_files,
+            scope,
+            limit,
+            cursor,
+        } => serde_json::to_string_pretty(&sonar::analysis::impact(
+            &db,
+            &sonar::analysis::ImpactOptions {
+                base,
+                max_files,
+                scope,
+                limit,
+                cursor,
+                baseline_resolve,
+            },
+        )?)?,
+        Command::ReviewPack {
+            seed,
+            base,
+            baseline_resolve,
+            max_files,
+            max_tokens,
+            scope,
+            limit,
+            cursor,
+        } => serde_json::to_string_pretty(&sonar::analysis::review_pack(
+            &db,
+            &sonar::analysis::ReviewPackOptions {
+                seed,
+                base,
+                baseline_resolve,
+                max_files,
+                max_tokens,
+                scope,
+                limit,
+                cursor,
+            },
+        )?)?,
+        Command::BaselineCache { action } => match action {
+            BaselineCacheCommand::List => {
+                serde_json::to_string_pretty(&sonar::analysis::baseline_cache_list()?)?
+            }
+            BaselineCacheCommand::Prune {
+                all,
+                max_bytes,
+                max_entries,
+            } => serde_json::to_string_pretty(&sonar::analysis::baseline_cache_prune(
+                all,
+                max_bytes,
+                max_entries,
+            )?)?,
+        },
         Command::Init(_) => serde_json::to_string_pretty(&onboarding::initialize(&configuration)?)?,
         Command::Setup {
             client,

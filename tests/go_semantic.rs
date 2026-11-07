@@ -1330,3 +1330,92 @@ fn go_cli_init_saves_the_build_profile_and_refreshes_it() {
         "stale"
     );
 }
+
+#[test]
+fn baseline_compilation_reuses_go_options_and_preserves_old_consumers() {
+    let Some(go) = compiler() else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("repo");
+    fs::create_dir(&root).unwrap();
+    fs::write(
+        root.join("go.mod"),
+        "module example.test/baseline\n\ngo 1.18\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("service.go"),
+        "package baseline\nfunc Value() int { return 1 }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("consumer.go"),
+        "package baseline\nfunc Run() int { return Value() }\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "--all"],
+        vec![
+            "-c",
+            "user.name=Sonar Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "base",
+        ],
+    ] {
+        assert!(
+            Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    fs::write(
+        root.join("service.go"),
+        "package baseline\nfunc Value() int { return 2 }\n",
+    )
+    .unwrap();
+    let db = temp.path().join("index.sqlite");
+    sonar::index(&root, &db).unwrap();
+    sonar::resolve_go(
+        &db,
+        &GoOptions {
+            command: go,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let before = fs::read(&db).unwrap();
+    let report = sonar::analysis::impact(
+        &db,
+        &sonar::analysis::ImpactOptions {
+            baseline_resolve: true,
+            scope: Some("service.go".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        report.baseline.compilers[0].status, "prepared",
+        "{:?}",
+        report.baseline.compilers
+    );
+    assert!(
+        report.changes[0]
+            .baseline_consumers
+            .iter()
+            .any(|c| c.location.symbol.as_deref() == Some("Run") && c.kind == "calls")
+    );
+    assert_eq!(before, fs::read(&db).unwrap());
+}

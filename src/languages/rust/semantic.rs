@@ -159,6 +159,17 @@ pub fn resolve(db: &Path, analyzer: &Path, config: Option<&Path>) -> Result<Sema
     let manifest_path = work.path().join("manifest.json");
     fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
     let mut result = import_scip(db, &scip_path, &manifest_path)?;
+    let configured = store::open(db, true)?;
+    let baseline_analyzer = if analyzer.components().count() > 1 {
+        std::path::absolute(analyzer)?
+    } else {
+        analyzer.to_owned()
+    };
+    configured.execute(
+        "INSERT OR REPLACE INTO metadata VALUES ('rust_baseline_analyzer',?1)",
+        [baseline_analyzer.to_string_lossy().as_ref()],
+    )?;
+    drop(configured);
     // Keep a reproducible pair for inspection after a successful import.
     fs::copy(scip_path, parent.join("index.scip"))?;
     fs::copy(manifest_path, parent.join("semantic-manifest.json"))?;

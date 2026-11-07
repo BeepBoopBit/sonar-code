@@ -38,8 +38,30 @@ pub struct LanguageState {
     pub capabilities: LanguageCapabilities,
 }
 
+pub(crate) struct BaselineCacheProfile {
+    pub settings: serde_json::Value,
+    pub tools: Vec<(std::path::PathBuf, Vec<String>)>,
+}
+
 pub(crate) trait LanguageAdapter: Sync {
     fn id(&self) -> &'static str;
+    fn dependency_provider(&self) -> Option<&dyn crate::analysis::provider::AnalysisProvider> {
+        None
+    }
+    /// Explicit optional preparation for an isolated baseline. No current index writes.
+    fn resolve_baseline(&self, _db: &Path, _current: &Connection, _scratch: &Path) -> Result<bool> {
+        Ok(false)
+    }
+    fn baseline_cache_profile(
+        &self,
+        _current: &Connection,
+        _source: &Path,
+    ) -> Result<Option<BaselineCacheProfile>> {
+        Ok(None)
+    }
+    fn baseline_cache_dependencies(&self, _db: &Path) -> Result<Vec<std::path::PathBuf>> {
+        Ok(Vec::new())
+    }
     fn extensions(&self) -> &'static [&'static str];
     fn grammar(&self, path: &str) -> tree_sitter::Language;
     fn capabilities(&self) -> LanguageCapabilities;

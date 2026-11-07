@@ -1,0 +1,9 @@
+{
+  "id": "pagination",
+  "baseline": {"paging.py": "def page(records, offset, limit):\n    \"\"\"Return up to limit records, starting at offset.\"\"\"\n    return records[offset:offset + limit]\n"},
+  "buggy": {"paging.py": "def page(records, offset, limit):\n    \"\"\"Return up to limit records, starting at offset.\"\"\"\n    return records[offset:offset + limit - 1]\n"},
+  "control": {"paging.py": "def page(records, offset, limit):\n    \"\"\"Return up to limit records, starting at offset.\"\"\"\n    end = offset + limit\n    return records[offset:end]\n"},
+  "oracle": "from paging import page\nassert page(list(range(6)), 0, 3) == [0, 1, 2]\nassert page(list(range(6)), 3, 3) == [3, 4, 5]\nassert page([1], 0, 1) == [1]\n",
+  "issue": {"id": "short-page", "description": "The slice drops the last requested record, including returning an empty page for limit=1.", "path": "paging.py", "needle": "return records[offset:offset + limit - 1]"},
+  "required_context": []
+}

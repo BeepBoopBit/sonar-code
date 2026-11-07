@@ -1,0 +1,18 @@
+{
+  "id": "expiry",
+  "baseline": {
+    "settings.py": "# Cache timestamps and this duration are measured in seconds.\nTTL_SECONDS = 30\n",
+    "cache.py": "from settings import TTL_SECONDS\n\ndef expired(created, now):\n    return now - created >= TTL_SECONDS\n"
+  },
+  "buggy": {
+    "settings.py": "# Cache timestamps and this duration are measured in seconds.\nTTL_SECONDS = 30\n",
+    "cache.py": "from settings import TTL_SECONDS\n\ndef expired(created, now):\n    return now - created >= TTL_SECONDS * 1000\n"
+  },
+  "control": {
+    "settings.py": "# Cache timestamps and this duration are measured in seconds.\nTTL_SECONDS = 30\n",
+    "cache.py": "from settings import TTL_SECONDS\n\ndef expired(created, now):\n    elapsed = now - created\n    return elapsed >= TTL_SECONDS\n"
+  },
+  "oracle": "from cache import expired\nassert expired(100, 129) is False\nassert expired(100, 130) is True\nassert expired(100, 131) is True\n",
+  "issue": {"id": "ttl-unit-mismatch", "description": "Multiplying a seconds duration by 1000 keeps expired cache data live for 1000 times the intended TTL.", "path": "cache.py", "needle": "return now - created >= TTL_SECONDS * 1000"},
+  "required_context": [{"path": "settings.py", "needle": "# Cache timestamps and this duration are measured in seconds.\nTTL_SECONDS = 30"}]
+}

@@ -1,5 +1,6 @@
 //! Local source indexing and navigational retrieval. No model or network is required.
 
+pub mod analysis;
 mod embeddings;
 mod exclusions;
 mod explore;

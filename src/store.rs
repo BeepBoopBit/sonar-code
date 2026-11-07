@@ -12,6 +12,7 @@ use crate::{IndexReport, text, workspace};
 
 const APPLICATION_ID: i32 = 0x534f4e52;
 const SCHEMA_VERSION: i32 = 3;
+pub(crate) const LINES_EXTRACTION_VERSION: &str = "8-go";
 
 const SCHEMA: &str = "
 CREATE TABLE metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -184,7 +185,7 @@ pub fn index_with_resources(
     let extraction_version = if chunking == crate::Chunking::Ast {
         "8-go-ast"
     } else {
-        "8-go"
+        LINES_EXTRACTION_VERSION
     };
     let reparse = metadata(&tx, "extraction_version")?.as_deref() != Some(extraction_version);
     let changed: Vec<_> = files
@@ -360,6 +361,7 @@ pub fn index_with_resources(
         "INSERT OR REPLACE INTO metadata VALUES ('languages',?1)",
         [crate::supported_languages().join(",")],
     )?;
+    crate::analysis::store::prepare(&tx, &files, &snapshot)?;
     tx.commit()?;
     Ok(IndexReport {
         root: root_string.to_owned(),

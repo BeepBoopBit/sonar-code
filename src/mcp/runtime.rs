@@ -23,6 +23,10 @@ pub(super) enum Operation {
     Neighbors(params::Neighbors),
     Follow(params::Follow),
     FieldUses(params::FieldUses),
+    Dependencies(params::Dependencies),
+    ReviewContext(params::ReviewContext),
+    ReviewAreas(params::ReviewAreas),
+    Impact(params::Impact),
 }
 
 struct Job {
@@ -199,6 +203,47 @@ impl Runtime {
             .expect("initialized investigator");
         let engine = investigator.engine();
         Ok(match operation {
+            Operation::Impact(p) => serde_json::to_value(crate::analysis::impact(
+                &self.db,
+                &crate::analysis::ImpactOptions {
+                    base: p.base.unwrap_or_else(|| "HEAD".into()),
+                    max_files: p.max_files.unwrap_or(12),
+                    scope: p.scope,
+                    limit: p.limit.unwrap_or(5),
+                    cursor: p.cursor,
+                    baseline_resolve: p.baseline_resolve.unwrap_or(false),
+                },
+            )?)?,
+            Operation::ReviewContext(p) => serde_json::to_value(crate::analysis::review_context(
+                &self.db,
+                &p.seed,
+                &crate::analysis::ReviewContextOptions {
+                    max_files: p.max_files.unwrap_or(12),
+                    scope: p.scope,
+                },
+            )?)?,
+            Operation::ReviewAreas(p) => serde_json::to_value(crate::analysis::review_areas(
+                &self.db,
+                &crate::analysis::ReviewAreasOptions {
+                    max_files: p.max_files.unwrap_or(12),
+                    scope: p.scope,
+                    limit: p.limit.unwrap_or(5),
+                    cursor: p.cursor,
+                },
+            )?)?,
+            Operation::Dependencies(p) => serde_json::to_value(crate::analysis::dependencies(
+                &self.db,
+                &p.path,
+                &crate::analysis::DependencyOptions {
+                    direction: p
+                        .direction
+                        .map(Into::into)
+                        .unwrap_or(crate::Direction::Outgoing),
+                    depth: p.depth.unwrap_or(1),
+                    limit: p.limit.unwrap_or(100),
+                    cursor: p.cursor,
+                },
+            )?)?,
             Operation::Init => unreachable!(),
             Operation::Status => self.status()?,
             Operation::Brief(p) => serde_json::to_value(

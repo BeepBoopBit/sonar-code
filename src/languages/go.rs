@@ -89,6 +89,66 @@ impl LanguageAdapter for Go {
                 )
             })
     }
+    fn resolve_baseline(
+        &self,
+        db: &std::path::Path,
+        current: &rusqlite::Connection,
+        _scratch: &std::path::Path,
+    ) -> Result<bool> {
+        let mut options = crate::store::metadata(current, "go_semantic_manifest")?
+            .map(|text| serde_json::from_str::<serde_json::Value>(&text))
+            .transpose()?
+            .and_then(|v| v.get("options").cloned())
+            .map(serde_json::from_value::<semantic::GoOptions>)
+            .transpose()?
+            .unwrap_or_default();
+        if let Some(command) = crate::store::metadata(current, "go_baseline_command")? {
+            options.command = command.into();
+        }
+        semantic::resolve(db, &options)?;
+        Ok(true)
+    }
+    fn baseline_cache_profile(
+        &self,
+        current: &rusqlite::Connection,
+        _source: &std::path::Path,
+    ) -> Result<Option<super::BaselineCacheProfile>> {
+        let options = crate::store::metadata(current, "go_semantic_manifest")?
+            .map(|text| serde_json::from_str::<serde_json::Value>(&text))
+            .transpose()?
+            .and_then(|v| v.get("options").cloned())
+            .unwrap_or_else(|| serde_json::json!({}));
+        let command = crate::store::metadata(current, "go_baseline_command")?
+            .or_else(|| options["command"].as_str().map(str::to_owned))
+            .unwrap_or_else(|| "go".into());
+        Ok(Some(super::BaselineCacheProfile {
+            settings: options,
+            tools: vec![
+                (command.clone().into(), vec!["version".into()]),
+                (
+                    command.into(),
+                    [
+                        "env",
+                        "-json",
+                        "GOOS",
+                        "GOARCH",
+                        "CGO_ENABLED",
+                        "GOFLAGS",
+                        "GOEXPERIMENT",
+                        "GOTOOLCHAIN",
+                        "GOMODCACHE",
+                        "GOPATH",
+                        "GOROOT",
+                        "GOWORK",
+                        "GOENV",
+                    ]
+                    .into_iter()
+                    .map(str::to_owned)
+                    .collect(),
+                ),
+            ],
+        }))
+    }
     fn semantic_profile(&self, conn: &rusqlite::Connection) -> Result<Option<String>> {
         crate::store::metadata(conn, "go_semantic_profile")
     }

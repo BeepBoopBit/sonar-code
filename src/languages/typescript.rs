@@ -144,6 +144,67 @@ impl LanguageAdapter for TypeScript {
             .filter(|n| callable(n.kind()))
             .unwrap_or(declaration)
     }
+    fn resolve_baseline(
+        &self,
+        db: &std::path::Path,
+        current: &rusqlite::Connection,
+        _scratch: &std::path::Path,
+    ) -> Result<bool> {
+        let Some(settings) = crate::store::metadata(current, "typescript_baseline_resolver")?
+        else {
+            return Ok(false);
+        };
+        let settings: serde_json::Value = serde_json::from_str(&settings)?;
+        let current_root = crate::store::metadata(current, "root")?.unwrap();
+        let conn = crate::store::open(db, false)?;
+        let root = crate::store::metadata(&conn, "root")?.unwrap();
+        drop(conn);
+        let project = settings["project"]
+            .as_str()
+            .map(|p| {
+                std::path::Path::new(p)
+                    .strip_prefix(&current_root)
+                    .map(|relative| std::path::Path::new(&root).join(relative))
+            })
+            .transpose()?;
+        semantic::resolve(
+            db,
+            std::path::Path::new(settings["node"].as_str().unwrap_or("node")),
+            settings["compiler"].as_str().map(std::path::Path::new),
+            project.as_deref(),
+        )?;
+        Ok(true)
+    }
+    fn baseline_cache_profile(
+        &self,
+        current: &rusqlite::Connection,
+        _source: &std::path::Path,
+    ) -> Result<Option<super::BaselineCacheProfile>> {
+        let Some(settings) = crate::store::metadata(current, "typescript_baseline_resolver")?
+        else {
+            return Ok(None);
+        };
+        let settings: serde_json::Value = serde_json::from_str(&settings)?;
+        let node = settings["node"].as_str().unwrap_or("node").to_owned();
+        Ok(Some(super::BaselineCacheProfile {
+            settings: settings.clone(),
+            tools: vec![
+                (node.clone().into(), vec!["--version".into()]),
+                (
+                    node.into(),
+                    vec![
+                        "-p".into(),
+                        format!(
+                            "require({}).version",
+                            serde_json::to_string(
+                                settings["compiler"].as_str().unwrap_or("typescript")
+                            )?
+                        ),
+                    ],
+                ),
+            ],
+        }))
+    }
     fn semantic_profile(&self, conn: &rusqlite::Connection) -> Result<Option<String>> {
         crate::store::metadata(conn, "typescript_semantic_profile")
     }

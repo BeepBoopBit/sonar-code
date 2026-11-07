@@ -301,3 +301,91 @@ fn new_tsconfig_and_ambient_type_packages_invalidate_inferred_analysis() {
     assert_eq!(stale.index.semantic_freshness, "stale");
     assert!(stale.links.is_empty());
 }
+
+#[test]
+fn baseline_compilation_reuses_typescript_settings_in_the_isolated_project() {
+    let Some(compiler) = compiler() else {
+        return;
+    };
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path().join("repo");
+    fs::create_dir(&root).unwrap();
+    fs::write(
+        root.join("tsconfig.json"),
+        r#"{"compilerOptions":{"target":"ESNext","module":"ESNext","moduleResolution":"Bundler"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        root.join("service.ts"),
+        "export function value(): number { return 1; }\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("consumer.ts"),
+        "import {value} from './service';\nexport function run() { return value(); }\n",
+    )
+    .unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec!["add", "--all"],
+        vec![
+            "-c",
+            "user.name=Sonar Test",
+            "-c",
+            "user.email=test@example.invalid",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "commit",
+            "-qm",
+            "base",
+        ],
+    ] {
+        assert!(
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(&root)
+                .args(args)
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+    fs::write(
+        root.join("service.ts"),
+        "export function value(): number { return 2; }\n",
+    )
+    .unwrap();
+    let db = temp.path().join("index.sqlite");
+    sonar::index(&root, &db).unwrap();
+    sonar::resolve_typescript(
+        &db,
+        Path::new("node"),
+        Some(&compiler),
+        Some(&root.join("tsconfig.json")),
+    )
+    .unwrap();
+    let before = fs::read(&db).unwrap();
+    let report = sonar::analysis::impact(
+        &db,
+        &sonar::analysis::ImpactOptions {
+            baseline_resolve: true,
+            scope: Some("service.ts".into()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        report.baseline.compilers[0].status, "prepared",
+        "{:?}",
+        report.baseline.compilers
+    );
+    assert!(
+        report.changes[0]
+            .baseline_consumers
+            .iter()
+            .any(|c| c.location.symbol.as_deref() == Some("run") && c.kind == "calls")
+    );
+    assert_eq!(before, fs::read(&db).unwrap());
+}
